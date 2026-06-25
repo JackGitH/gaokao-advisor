@@ -458,7 +458,7 @@ class SchoolMatcher:
         if school_types:
             filtered = [
                 s for s in filtered
-                if s.get("type") in school_types
+                if self._matches_school_type_filter(s, school_types)
             ]
 
         # 省份筛选
@@ -483,6 +483,23 @@ class SchoolMatcher:
             ]
 
         return filtered
+
+    def _matches_school_type_filter(self, school: dict, school_types: list) -> bool:
+        """Match primary school type filters, with 双一流 matching feature membership."""
+        from scraper.school_levels import is_double_first_class
+
+        school_type = school.get("type")
+        for selected_type in school_types:
+            if selected_type == "双一流":
+                if is_double_first_class(
+                    school.get("name"),
+                    school_type,
+                    school.get("features"),
+                ):
+                    return True
+            elif school_type == selected_type:
+                return True
+        return False
 
     def _dedupe_recommendation_buckets(
         self,

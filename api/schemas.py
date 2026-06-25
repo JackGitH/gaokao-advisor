@@ -14,7 +14,7 @@ class SchoolInfo(BaseModel):
     name: str
     province: Optional[str] = None
     city: Optional[str] = None
-    type: Optional[str] = Field(None, description="985/211/双一流/普通本科")
+    type: Optional[str] = Field(None, description="985/211/双一流/普通本科/高职专科")
     level: Optional[str] = Field(None, description="本科一批/本科二批")
     features: Optional[str] = None
 
@@ -60,7 +60,7 @@ class RecommendRequest(BaseModel):
     rank: Optional[int] = Field(None, description="位次，如不提供则自动根据分数查询")
     preferred_provinces: Optional[List[str]] = Field(None, description="意向省份列表")
     preferred_majors: Optional[List[str]] = Field(None, description="意向专业类别")
-    school_types: Optional[List[str]] = Field(None, description="学校类型筛选：985/211/双一流")
+    school_types: Optional[List[str]] = Field(None, description="学校类型筛选：985/211/双一流/普通本科/高职专科")
     count: int = Field(default=30, description="推荐数量", ge=1, le=96)
 
 

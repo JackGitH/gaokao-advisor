@@ -57,7 +57,7 @@ async def convert_score_rank(
 async def recommend(
     score: Optional[int] = Query(None, ge=0, le=750, description="高考分数"),
     rank: Optional[int] = Query(None, ge=1, description="全省排名"),
-    school_type: Optional[str] = Query(None, description="学校类型筛选：985,211,双一流,普通本科"),
+    school_type: Optional[str] = Query(None, description="学校类型筛选：985,211,双一流,普通本科,高职专科"),
     province: Optional[str] = Query(None, description="省内/省外"),
     major_category: Optional[str] = Query(None, description="专业类别"),
     sort_by: str = Query(

@@ -37,6 +37,7 @@ def init_db():
         _init_schema(conn)
         _ensure_schema_migrations(conn)
         _deduplicate_existing_data(conn)
+        _normalize_school_levels(conn)
         _ensure_unique_indexes(conn)
     finally:
         conn.close()
@@ -143,6 +144,27 @@ def _ensure_unique_indexes(conn: sqlite3.Connection):
     conn.commit()
 
 
+def _normalize_school_levels(conn: sqlite3.Connection):
+    """Correct school type/features using canonical school-tier lists."""
+    from scraper.school_levels import normalize_school_level_fields
+
+    rows = conn.execute(
+        "SELECT id, name, type, features FROM schools"
+    ).fetchall()
+    for row in rows:
+        school_type, features = normalize_school_level_fields(
+            row["name"],
+            row["type"],
+            row["features"],
+        )
+        if school_type != row["type"] or features != row["features"]:
+            conn.execute(
+                "UPDATE schools SET type = ?, features = ? WHERE id = ?",
+                (school_type, features, row["id"]),
+            )
+    conn.commit()
+
+
 # ==================== 学校相关操作 ====================
 
 def insert_school(name: str, province: str = None, city: str = None,
@@ -153,6 +175,10 @@ def insert_school(name: str, province: str = None, city: str = None,
     Returns:
         新插入记录的ID
     """
+    from scraper.school_levels import normalize_school_level_fields
+
+    type_, features = normalize_school_level_fields(name, type_, features)
+
     conn = get_connection()
     try:
         row = conn.execute(
