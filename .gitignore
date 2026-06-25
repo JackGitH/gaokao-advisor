@@ -11,4 +11,3 @@ data/
 .env
 venv/
 .venv/
-deploy.sh
