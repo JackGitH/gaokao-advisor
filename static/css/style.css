@@ -100,6 +100,15 @@ body {
 .btn-search:active { transform: scale(.97); }
 .btn-icon { margin-right: 2px; }
 
+/* Input hint */
+.input-hint {
+    font-size: 11px;
+    color: #888;
+    margin-top: 8px;
+    margin-bottom: 2px;
+    line-height: 1.5;
+}
+
 .filter-row {
     display: flex;
     align-items: center;
