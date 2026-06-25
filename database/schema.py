@@ -1,6 +1,7 @@
 """
 高考志愿推荐系统 - 数据库表结构定义
-包含核心表：schools, majors, admission_records, score_lines, ranking_table, subject_ranking_table
+包含核心表：schools, majors, admission_records, score_lines, ranking_table,
+subject_ranking_table, subject_requirements
 """
 
 # ==================== 建表 DDL ====================
@@ -76,6 +77,23 @@ CREATE TABLE IF NOT EXISTS subject_ranking_table (
 );
 """
 
+CREATE_SUBJECT_REQUIREMENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS subject_requirements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_version TEXT NOT NULL,      -- 例如：2024通用版
+    applies_to TEXT,                   -- 例如：2025,2026
+    education_level TEXT,              -- 本科/专科
+    school_code TEXT,
+    school_name TEXT NOT NULL,
+    major_code TEXT,
+    major_name TEXT NOT NULL,
+    requirement_text TEXT NOT NULL,    -- 官方原文
+    required_subjects TEXT,            -- 物理,化学；不提科目要求则为空
+    province TEXT,
+    source_url TEXT
+);
+"""
+
 # 所有建表语句列表
 ALL_TABLES = [
     CREATE_SCHOOLS_TABLE,
@@ -84,6 +102,7 @@ ALL_TABLES = [
     CREATE_SCORE_LINES_TABLE,
     CREATE_RANKING_TABLE,
     CREATE_SUBJECT_RANKING_TABLE,
+    CREATE_SUBJECT_REQUIREMENTS_TABLE,
 ]
 
 # ==================== 索引 ====================
@@ -95,6 +114,8 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_admission_rank ON admission_records(min_rank);",
     "CREATE INDEX IF NOT EXISTS idx_ranking_year_score ON ranking_table(year, score);",
     "CREATE INDEX IF NOT EXISTS idx_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
+    "CREATE INDEX IF NOT EXISTS idx_subject_requirements_school ON subject_requirements(school_name);",
+    "CREATE INDEX IF NOT EXISTS idx_subject_requirements_school_major ON subject_requirements(school_name, major_name);",
     "CREATE INDEX IF NOT EXISTS idx_score_lines_year ON score_lines(year, batch);",
     "CREATE INDEX IF NOT EXISTS idx_schools_type ON schools(type);",
 ]
@@ -118,4 +139,4 @@ def init_db(connection):
         cursor.execute(index_sql)
     
     connection.commit()
-    print("数据库初始化完成：6张表和索引已创建")
+    print("数据库初始化完成：7张表和索引已创建")

@@ -363,6 +363,41 @@ async def subject_ranking_table(
         raise HTTPException(status_code=500, detail=f"查询选科一分一段表失败: {str(e)}")
 
 
+@router.get("/subject-requirements/stats")
+async def subject_requirements_stats():
+    """获取官方专业选考科目要求导入统计。"""
+    try:
+        conn = get_connection()
+        try:
+            by_level = conn.execute(
+                """SELECT education_level, COUNT(*) as count
+                   FROM subject_requirements
+                   GROUP BY education_level
+                   ORDER BY education_level"""
+            ).fetchall()
+            by_requirement = conn.execute(
+                """SELECT COALESCE(NULLIF(required_subjects, ''), '不限') as requirement,
+                          COUNT(*) as count
+                   FROM subject_requirements
+                   GROUP BY COALESCE(NULLIF(required_subjects, ''), '不限')
+                   ORDER BY count DESC
+                   LIMIT 12"""
+            ).fetchall()
+        finally:
+            conn.close()
+
+        total = sum(row["count"] for row in by_level)
+        return success_response({
+            "source_version": "2024通用版",
+            "applies_to": "2025,2026",
+            "total": total,
+            "by_level": [dict(row) for row in by_level],
+            "top_requirements": [dict(row) for row in by_requirement],
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询选科要求统计失败: {str(e)}")
+
+
 # ==================== 5. 历年批次线 ====================
 
 @router.get("/score-lines")

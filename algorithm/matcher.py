@@ -5,6 +5,7 @@
 import os
 import sys
 import math
+import re
 from typing import List, Dict, Any, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,7 @@ from database.db import (
     get_score_by_rank,
     query_schools_by_rank_range,
     query_admission_by_school,
+    query_subject_requirements_by_school,
 )
 from config import DATABASE_PATH, ALGORITHM_CONFIG
 from algorithm.ranker import SchoolRanker
@@ -609,6 +611,7 @@ class SchoolMatcher:
                    SELECT m.id as major_id,
                           m.name as major_name,
                           m.category as category,
+                          s.name as school_name,
                           ar.year as year,
                           ar.min_score as min_score,
                           ar.min_rank as min_rank,
@@ -616,6 +619,7 @@ class SchoolMatcher:
                           ar.plan_count as plan_count,
                           ar.subject_requirement as subject_requirement
                    FROM admission_records ar
+                   JOIN schools s ON ar.school_id = s.id
                    JOIN majors m ON ar.major_id = m.id
                    LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
                    WHERE ar.school_id = ?
@@ -628,6 +632,9 @@ class SchoolMatcher:
         finally:
             conn.close()
 
+        school_name = rows[0]["school_name"] if rows else None
+        requirement_lookup = self._build_subject_requirement_lookup(school_name)
+
         majors_map = {}
         for row in rows:
             major_id = row["major_id"]
@@ -637,12 +644,24 @@ class SchoolMatcher:
                     "major_name": row["major_name"],
                     "category": row["category"],
                     "subject_requirement": row["subject_requirement"],
+                    "subject_requirement_text": None,
+                    "subject_requirement_source": None,
                     "ranks": [],
                     "scores": [],
                     "history": [],
                 }
 
             data = majors_map[major_id]
+            if not data.get("subject_requirement"):
+                requirement = self._match_subject_requirement(
+                    requirement_lookup,
+                    data["major_name"],
+                )
+                if requirement:
+                    data["subject_requirement"] = requirement.get("required_subjects") or "不限"
+                    data["subject_requirement_text"] = requirement.get("requirement_text")
+                    data["subject_requirement_source"] = requirement.get("source_version")
+
             data["ranks"].append(row["min_rank"])
             if row["min_score"] is not None:
                 data["scores"].append(row["min_score"])
@@ -690,6 +709,8 @@ class SchoolMatcher:
                 "major_name": data["major_name"],
                 "category": data["category"],
                 "subject_requirement": data.get("subject_requirement"),
+                "subject_requirement_text": data.get("subject_requirement_text"),
+                "subject_requirement_source": data.get("subject_requirement_source"),
                 "subject_status": subject_status,
                 "fit_label": fit_label,
                 "probability": probability,
@@ -728,15 +749,84 @@ class SchoolMatcher:
             return "unknown"
 
         normalized = requirement.replace("，", ",").replace("、", ",").strip()
-        if normalized in ("不限", "无", "无要求"):
+        if normalized in ("不限", "无", "无要求") or "不提科目要求" in normalized:
             return "fit"
 
-        required = {part.strip() for part in normalized.split(",") if part.strip()}
+        subject_names = ("思想政治", "历史", "地理", "物理", "化学", "生物")
+        required = {
+            subject
+            for subject in subject_names
+            if subject in normalized
+        }
+        if not required:
+            required = {part.strip() for part in normalized.split(",") if part.strip()}
         if not required:
             return "unknown"
         if not selected_subjects:
             return "unknown"
         return "fit" if required.issubset(selected_subjects) else "blocked"
+
+    def _build_subject_requirement_lookup(self, school_name: str) -> dict:
+        """Build matching maps for one school's official subject requirements."""
+        if not school_name:
+            return {"exact": {}, "base": {}, "all": []}
+
+        rows = query_subject_requirements_by_school(school_name)
+        lookup = {"exact": {}, "base": {}, "all": []}
+        for row in rows:
+            major_name = row.get("major_name")
+            if not major_name:
+                continue
+            exact_key = self._normalize_major_name(major_name)
+            base_key = self._normalize_major_name(major_name, remove_parentheses=True)
+            lookup["exact"].setdefault(exact_key, row)
+            if base_key:
+                lookup["base"].setdefault(base_key, row)
+            lookup["all"].append({
+                **row,
+                "_exact_key": exact_key,
+                "_base_key": base_key,
+            })
+        return lookup
+
+    def _match_subject_requirement(self, lookup: dict, major_name: str) -> Optional[dict]:
+        """Find the safest official subject requirement match for a major name."""
+        if not major_name or not lookup:
+            return None
+
+        exact_key = self._normalize_major_name(major_name)
+        base_key = self._normalize_major_name(major_name, remove_parentheses=True)
+
+        if exact_key in lookup.get("exact", {}):
+            return lookup["exact"][exact_key]
+        if base_key in lookup.get("base", {}):
+            return lookup["base"][base_key]
+
+        # Handle rows such as "英语（师范类）" vs "英语" or
+        # "计算机类（计算机科学与技术、软件工程）" vs "计算机科学与技术".
+        if base_key:
+            for row in lookup.get("all", []):
+                official_base = row.get("_base_key") or ""
+                official_exact = row.get("_exact_key") or ""
+                if official_base and official_base == base_key:
+                    return row
+                if len(base_key) >= 4 and base_key in official_exact:
+                    return row
+                if len(official_base) >= 4 and official_base in exact_key:
+                    return row
+
+        return None
+
+    def _normalize_major_name(self, name: str, remove_parentheses: bool = False) -> str:
+        value = str(name or "")
+        value = value.replace("（", "(").replace("）", ")")
+        value = re.sub(r"\s+", "", value)
+        if remove_parentheses:
+            previous = None
+            while previous != value:
+                previous = value
+                value = re.sub(r"\([^()]*\)", "", value)
+        return value
 
     def _calculate_major_trend(self, years_data: dict) -> dict:
         """

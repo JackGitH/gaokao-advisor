@@ -467,6 +467,7 @@ body {
 .major-fit.stable { background: var(--c-safety); }
 .major-fit.match { background: var(--c-match); }
 .major-fit.reach { background: var(--c-reach); }
+.major-fit.unknown { background: #a0aec0; }
 .major-suggestion-meta {
     display: flex;
     gap: 8px;

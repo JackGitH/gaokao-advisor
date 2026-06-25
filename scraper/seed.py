@@ -377,11 +377,12 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
                     "score_lines",
                     "ranking_table",
                     "subject_ranking_table",
+                    "subject_requirements",
                     "schools",
                     "majors",
                 ]:
                     conn.execute(f"DELETE FROM {table}")
-                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('admission_records', 'score_lines', 'ranking_table', 'subject_ranking_table', 'schools', 'majors')")
+                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('admission_records', 'score_lines', 'ranking_table', 'subject_ranking_table', 'subject_requirements', 'schools', 'majors')")
                 conn.commit()
             finally:
                 conn.close()

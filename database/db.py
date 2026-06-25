@@ -49,6 +49,8 @@ UNIQUE_INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_score_lines_year_batch ON score_lines(year, batch);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_ranking_year_score ON ranking_table(year, score);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_subject_requirement_identity
+       ON subject_requirements(source_version, education_level, school_code, major_code, major_name);""",
     """CREATE UNIQUE INDEX IF NOT EXISTS uq_admission_record_identity
        ON admission_records(year, school_id, major_id, IFNULL(batch, ''));""",
     "CREATE INDEX IF NOT EXISTS idx_admission_subject_requirement ON admission_records(subject_requirement);",
@@ -618,5 +620,63 @@ def bulk_insert_subject_rankings(rankings: List[Dict[str, Any]]) -> int:
         )
         conn.commit()
         return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def bulk_insert_subject_requirements(requirements: List[Dict[str, Any]]) -> int:
+    """
+    批量插入官方专业选考科目要求。
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.executemany(
+            """INSERT INTO subject_requirements
+               (source_version, applies_to, education_level, school_code, school_name,
+                major_code, major_name, requirement_text, required_subjects, province, source_url)
+               VALUES (:source_version, :applies_to, :education_level, :school_code, :school_name,
+                       :major_code, :major_name, :requirement_text, :required_subjects, :province, :source_url)
+               ON CONFLICT(source_version, education_level, school_code, major_code, major_name)
+               DO UPDATE SET
+                   applies_to = COALESCE(excluded.applies_to, subject_requirements.applies_to),
+                   requirement_text = excluded.requirement_text,
+                   required_subjects = excluded.required_subjects,
+                   province = COALESCE(excluded.province, subject_requirements.province),
+                   source_url = COALESCE(excluded.source_url, subject_requirements.source_url)""",
+            requirements
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def query_subject_requirements_by_school(school_name: str) -> List[Dict[str, Any]]:
+    """查询某所学校的官方专业选考科目要求。"""
+    normalized_name = (
+        str(school_name or "")
+        .replace("（", "(")
+        .replace("）", ")")
+        .strip()
+    )
+    variants = {school_name, normalized_name}
+    if "大学威海分校" in normalized_name:
+        variants.add(normalized_name.replace("大学威海分校", "大学(威海)"))
+    if "(" in normalized_name or ")" in normalized_name:
+        variants.add(normalized_name.replace("(", "（").replace(")", "）"))
+
+    variants = [value for value in variants if value]
+    placeholders = ",".join("?" * len(variants))
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"""SELECT school_name, major_name, requirement_text, required_subjects,
+                      education_level, source_version
+               FROM subject_requirements
+               WHERE school_name IN ({placeholders})
+                  OR REPLACE(REPLACE(school_name, '（', '('), '）', ')') IN ({placeholders})""",
+            [*variants, *variants],
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()

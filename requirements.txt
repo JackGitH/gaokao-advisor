@@ -8,3 +8,4 @@ aiohttp==3.9.1
 httpx==0.25.2
 openpyxl==3.1.2
 xlrd==2.0.1
+pypdf==6.10.0

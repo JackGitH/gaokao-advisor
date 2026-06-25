@@ -265,13 +265,17 @@ function renderSuggestedMajors(majors) {
     if (!majors || majors.length === 0) return '';
 
     const maxItems = window.matchMedia('(max-width: 768px)').matches ? 3 : 4;
+    const hasSelectedSubjects = Boolean(currentData?.user_input?.selected_subjects?.length);
     const rows = majors.slice(0, maxItems).map(m => {
         const probPct = asPercent(m.probability);
         const fit = m.fit_label || '参考';
         const fitClass = fit === '稳' ? 'stable' : (fit === '可冲' || fit === '风险高' ? 'reach' : 'match');
-        const subjectBadge = m.subject_requirement && m.subject_status === 'fit'
-            ? '<span class="major-fit stable">选科可报</span>'
-            : '';
+        let subjectBadge = '';
+        if (hasSelectedSubjects && m.subject_requirement && m.subject_status === 'fit') {
+            subjectBadge = '<span class="major-fit stable">选科可报</span>';
+        } else if (hasSelectedSubjects && m.subject_status === 'unknown') {
+            subjectBadge = '<span class="major-fit unknown">选科待核验</span>';
+        }
         const scoreText = m.latest_score ? `${m.latest_score}分` : (m.avg_score ? `均${m.avg_score}分` : '-');
         const rankText = m.latest_rank ? `${Number(m.latest_rank).toLocaleString()}位` : (m.avg_rank ? `均${Number(m.avg_rank).toLocaleString()}位` : '-');
 
