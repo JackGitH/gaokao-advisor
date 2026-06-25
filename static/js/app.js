@@ -582,6 +582,7 @@ function init() {
     if (DOM.filterToggle && DOM.filterRow) {
         DOM.filterToggle.addEventListener('click', () => {
             const isOpen = DOM.filterRow.classList.toggle('is-open');
+            DOM.filterToggle.textContent = isOpen ? '收起筛选' : '筛选 / 排序';
             DOM.filterToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
     }
