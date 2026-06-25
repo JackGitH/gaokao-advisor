@@ -695,10 +695,12 @@ body {
         display: none;
     }
     body.has-results .tudou-advisor {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        align-items: center;
         margin: 0 0 10px;
-        padding: 8px 10px;
+        padding: 8px 10px 7px;
         gap: 8px;
-        flex-wrap: wrap;
     }
     body.has-results .tudou-avatar {
         width: 30px;
@@ -713,18 +715,19 @@ body {
         font-size: .78rem;
         line-height: 1.35;
         display: -webkit-box;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 1;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
     body.has-results .tudou-tags {
-        flex: 1 0 100%;
+        grid-column: 2;
+        flex: none;
         max-width: 100%;
         justify-content: flex-start;
         gap: 4px;
-        margin-left: 38px;
-        margin-top: -4px;
+        margin: -5px 0 0;
     }
+    body.has-results .tudou-tag:nth-child(n+3) { display: none; }
     body.has-results .tudou-tag {
         min-height: 20px;
         padding: 1px 7px;
