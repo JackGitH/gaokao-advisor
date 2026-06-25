@@ -118,12 +118,6 @@ async def recommend(
         match_list = [format_school(s) for s in result.get("match", [])]
         safety = [format_school(s) for s in result.get("safety", [])]
 
-        # 按sort_by重排（算法层已做排序，此处确认）
-        sort_key = "school_level_score" if sort_by == "school_level" else sort_by
-        reach.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
-        match_list.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
-        safety.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
-
         stats = result.get("statistics", {})
 
         return success_response({
