@@ -221,12 +221,14 @@ class SchoolMatcher:
         safety_schools = self.ranker.rank_schools(safety_schools, user_rank, sort_by=sort_by)
 
         if not (reach_schools or match_schools or safety_schools):
-            fallback_schools = self._query_nearest_schools(user_rank)
+            fallback_schools = self._query_nearest_schools(user_rank, limit=200)
             if filters:
                 fallback_schools = self._apply_filters(fallback_schools, filters)
             match_schools = self.ranker.rank_schools(
                 fallback_schools[:30], user_rank, sort_by=sort_by
             )
+            if sort_by == "match_score":
+                match_schools.sort(key=lambda s: abs((s.get("avg_rank") or 0) - user_rank))
 
         # 6. 统计
         all_schools = reach_schools + match_schools + safety_schools
