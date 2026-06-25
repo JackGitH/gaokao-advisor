@@ -7,9 +7,9 @@ services:
       - "8001:8001"
     restart: always
     environment:
-      - DATABASE_PATH=/app/data/gaokao.db
+      - DATABASE_PATH=/app/database/gaokao.db
     volumes:
-      - gaokao-data:/app/data
+      - gaokao-data:/app/database
 
 volumes:
   gaokao-data:
