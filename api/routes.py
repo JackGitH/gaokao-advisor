@@ -73,10 +73,6 @@ async def convert_score_rank(
         if rank is not None:
             converted_score = matcher.rank_to_score(rank, year)
 
-        ref_years = result.get("admission_reference_years", [])
-        ref_year_text = f"{min(ref_years)}-{max(ref_years)}" if ref_years else "历史"
-        subject_notice = f"；已记录选科：{'、'.join(subjects)}" if subjects else ""
-
         return success_response({
             "score": converted_score,
             "rank": converted_rank,
@@ -161,6 +157,9 @@ async def recommend(
         safety = [format_school(s) for s in result.get("safety", [])]
 
         stats = result.get("statistics", {})
+        ref_years = result.get("admission_reference_years", [])
+        ref_year_text = f"{min(ref_years)}-{max(ref_years)}" if ref_years else "历史"
+        subject_notice = f"；已记录选科：{'、'.join(subjects)}" if subjects else ""
 
         return success_response({
             "user_input": {
