@@ -16,9 +16,12 @@ const $  = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 
 const DOM = {
+    inputBar:       $('inputBar'),
     scoreInput:     $('scoreInput'),
     rankInput:      $('rankInput'),
     btnSearch:      $('btnSearch'),
+    filterToggle:   $('filterToggle'),
+    filterRow:      document.querySelector('.filter-row'),
     sortBy:         $('sortBy'),
     loading:        $('loadingOverlay'),
     errorBanner:    $('errorBanner'),
@@ -54,6 +57,13 @@ let conversionTimer = null;
 let conversionSeq = 0;
 let syncingInputs = false;
 let lastInputSource = null;
+
+function setResultsMode(enabled) {
+    document.body.classList.toggle('has-results', enabled);
+    if (DOM.inputBar) DOM.inputBar.classList.toggle('results-mode', enabled);
+    if (enabled && DOM.filterRow) DOM.filterRow.classList.remove('is-open');
+    if (enabled && DOM.filterToggle) DOM.filterToggle.setAttribute('aria-expanded', 'false');
+}
 
 // ============ API Functions ============
 
@@ -234,7 +244,8 @@ function escapeHtml(value) {
 function renderSuggestedMajors(majors) {
     if (!majors || majors.length === 0) return '';
 
-    const rows = majors.slice(0, 4).map(m => {
+    const maxItems = window.matchMedia('(max-width: 768px)').matches ? 3 : 4;
+    const rows = majors.slice(0, maxItems).map(m => {
         const probPct = asPercent(m.probability);
         const fit = m.fit_label || '参考';
         const fitClass = fit === '稳' ? 'stable' : (fit === '可冲' || fit === '风险高' ? 'reach' : 'match');
@@ -536,6 +547,7 @@ async function doSearch() {
         }
 
         currentData = recData;
+        setResultsMode(true);
 
         // 切换视图
         DOM.welcomeSection.style.display = 'none';
@@ -563,9 +575,16 @@ async function doSearch() {
 function init() {
     setupTabs();
     setupSchoolTypeCheckboxes();
+    setResultsMode(false);
 
     // 搜索
     DOM.btnSearch.addEventListener('click', doSearch);
+    if (DOM.filterToggle && DOM.filterRow) {
+        DOM.filterToggle.addEventListener('click', () => {
+            const isOpen = DOM.filterRow.classList.toggle('is-open');
+            DOM.filterToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+    }
 
     // 回车搜索
     DOM.scoreInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });

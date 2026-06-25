@@ -109,6 +109,20 @@ body {
     line-height: 1.5;
 }
 
+.filter-toggle {
+    display: none;
+    width: 100%;
+    margin-top: 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    background: #fff;
+    color: var(--c-primary);
+    font-size: .82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .filter-row {
     display: flex;
     align-items: center;
@@ -578,6 +592,98 @@ body {
     .card-metrics { grid-template-columns: 1fr 1fr; }
     .stat-card { padding: 10px 6px; }
     .stat-value { font-size: 1.3rem; }
+
+    body.has-results .header {
+        display: none;
+    }
+    body.has-results .main-content {
+        padding: 8px 12px 12px;
+    }
+    body.has-results .stats-cards {
+        display: none;
+    }
+    .input-bar.results-mode .input-bar-inner {
+        padding: 7px 10px 6px;
+    }
+    .input-bar.results-mode .input-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px;
+        align-items: end;
+        gap: 6px;
+    }
+    .input-bar.results-mode .input-group {
+        min-width: 0;
+        gap: 1px;
+    }
+    .input-bar.results-mode .input-group label {
+        font-size: .68rem;
+        line-height: 1.1;
+    }
+    .input-bar.results-mode .input-group input {
+        min-width: 0;
+        height: 34px;
+        padding: 5px 8px;
+        font-size: .92rem;
+        border-width: 1px;
+    }
+    .input-bar.results-mode .btn-search {
+        width: 42px;
+        height: 34px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+    }
+    .input-bar.results-mode .btn-icon {
+        margin: 0;
+    }
+    .input-bar.results-mode .btn-label,
+    .input-bar.results-mode .input-hint {
+        display: none;
+    }
+    .input-bar.results-mode .filter-toggle {
+        display: block;
+    }
+    .input-bar.results-mode .filter-row {
+        display: none;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--c-border);
+        gap: 6px;
+    }
+    .input-bar.results-mode .filter-row.is-open {
+        display: flex;
+    }
+    .input-bar.results-mode .filter-group {
+        width: 100%;
+        gap: 4px;
+    }
+    .input-bar.results-mode .chip-checkbox span,
+    .input-bar.results-mode .chip-radio span {
+        padding: 2px 8px;
+        font-size: .72rem;
+    }
+    .input-bar.results-mode #sortBy {
+        height: 30px;
+        font-size: .76rem;
+    }
+    body.has-results .tabs-section {
+        margin-bottom: 14px;
+    }
+    body.has-results .tabs-header {
+        margin-bottom: 10px;
+    }
+    body.has-results .tab-btn {
+        padding: 8px 0;
+        font-size: .86rem;
+    }
+    body.has-results .school-list {
+        gap: 10px;
+    }
+    body.has-results .school-card:hover {
+        transform: none;
+    }
 }
 
 @media (max-width: 400px) {
