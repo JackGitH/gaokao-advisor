@@ -650,5 +650,22 @@ function init() {
     console.log('高考志愿推荐系统已加载');
 }
 
+// ============ 访客统计 ============
+async function loadStats() {
+    try {
+        const res = await fetch(API_BASE + '/stats');
+        const data = await res.json();
+        if (data.success) {
+            const el = document.getElementById('visitorStats');
+            if (el) {
+                el.textContent = `已服务 ${data.data.visitor_count} 位访客，累计查询 ${data.data.query_count} 次`;
+            }
+        }
+    } catch(e) {
+        // 统计加载失败不影响主流程
+    }
+}
+
 // 启动
 document.addEventListener('DOMContentLoaded', init);
+loadStats();

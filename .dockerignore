@@ -8,3 +8,4 @@ config.md
 memory.md
 .DS_Store
 database/*.db
+database/stats.json

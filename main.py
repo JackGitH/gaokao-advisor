@@ -2,7 +2,7 @@
 高考志愿推荐系统 - FastAPI 应用入口
 """
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 import uvicorn
@@ -10,6 +10,7 @@ import uvicorn
 from config import API_CONFIG, BASE_DIR
 from database.db import init_db, get_connection
 from api.routes import router
+from api.stats import record_visit
 
 app = FastAPI(
     title=API_CONFIG["title"],
@@ -20,6 +21,27 @@ app = FastAPI(
 # 注册API路由
 app.include_router(router)
 app.include_router(router, prefix="/gk")
+
+
+# ==================== 访客统计中间件 ====================
+def get_client_ip(request: Request) -> str:
+    """获取真实客户端IP（支持nginx反向代理）"""
+    x_real_ip = request.headers.get("X-Real-IP")
+    if x_real_ip:
+        return x_real_ip
+    x_forwarded = request.headers.get("X-Forwarded-For")
+    if x_forwarded:
+        return x_forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def stats_middleware(request: Request, call_next):
+    """记录每个请求的访客IP"""
+    ip = get_client_ip(request)
+    record_visit(ip)
+    response = await call_next(request)
+    return response
 
 # 挂载静态文件
 static_dir = os.path.join(BASE_DIR, "static")

@@ -9,6 +9,7 @@ from algorithm.matcher import SchoolMatcher
 from algorithm.trend import TrendAnalyzer
 from database.db import get_connection
 from config import ALGORITHM_CONFIG, SHANDONG_CONFIG
+from api.stats import record_query, get_stats
 
 router = APIRouter(prefix="/api")
 
@@ -104,6 +105,9 @@ async def recommend(
     # 参数校验：score 和 rank 至少传一个
     if score is None and rank is None:
         raise HTTPException(status_code=400, detail="score 和 rank 至少需要提供一个")
+
+    # 记录查询次数
+    record_query()
 
     try:
         # 构建筛选条件
@@ -424,6 +428,14 @@ async def trend_summary():
         return success_response(summary)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查询趋势摘要失败: {str(e)}")
+
+
+# ==================== 访客统计 ====================
+
+@router.get("/stats")
+async def stats():
+    """获取访客统计"""
+    return {"success": True, "data": get_stats()}
 
 
 # ==================== 健康检查 ====================
