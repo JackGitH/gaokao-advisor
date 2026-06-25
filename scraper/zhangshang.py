@@ -30,8 +30,8 @@ class ZhangshangScraper(BaseScraper):
     SCHOOL_CODE_URL = "https://static-data.gaokao.cn/www/2.0/school/school_code.json"
     # 教育在线API - 高校列表
     EOL_SCHOOL_LIST_URL = "https://api.eol.cn/gkcx/api/"
-    # 掌上高考院校分数线接口（尝试直接请求）
-    PROVINCE_LINE_URL = "https://static-data.gaokao.cn/www/2.0/schoolprovincescore/{school_id}/37/{year}.json"
+    # 掌上高考院校专业分数线接口
+    SCHOOL_SPECIAL_SCORE_URL = "https://static-data.gaokao.cn/www/2.0/schoolspecialscore/{school_id}/{year}/37.json"
     # 山东省代码
     SHANDONG_CODE = "37"
     
@@ -135,7 +135,7 @@ class ZhangshangScraper(BaseScraper):
         Returns:
             录取数据字典，失败返回None
         """
-        url = self.PROVINCE_LINE_URL.format(school_id=school_id, year=year)
+        url = self.SCHOOL_SPECIAL_SCORE_URL.format(school_id=school_id, year=year)
         data = self.fetch_json(url, use_cache=True)
         
         if data and isinstance(data, dict):
@@ -169,7 +169,11 @@ class ZhangshangScraper(BaseScraper):
             "features": ",".join(features) if features else None,
         }
     
-    def scrape(self) -> List[Dict[str, Any]]:
+    def scrape(
+        self,
+        school_names: Optional[List[str]] = None,
+        max_schools: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         执行完整爬取流程：
         1. 获取学校列表
@@ -185,18 +189,30 @@ class ZhangshangScraper(BaseScraper):
             print("[掌上高考] 无法获取学校列表，将使用种子数据")
             return []
         
-        # Step 2: 遍历学校获取分数线
+        # Step 2: 遍历学校获取专业分数线
         processed = 0
         failed = 0
-        max_schools = 20  # 限制爬取数量避免被封
-        max_consecutive_failures = 5  # 连续失赥次数阀值
-        
-        for school_id, info in list(school_data.items())[:max_schools]:
-            school_name = info.get("name", "") if isinstance(info, dict) else str(info)
-            school_meta = self._extract_school_meta(info)
-            
+        wanted_names = set(school_names or [])
+        candidates = []
+        for raw_school_id, info in school_data.items():
+            if not isinstance(info, dict):
+                continue
+            school_name = info.get("name", "")
+            gaokao_school_id = str(info.get("school_id") or raw_school_id)
             if not school_name or school_name in ("code", "message", "msg"):
                 continue
+            if wanted_names and school_name not in wanted_names:
+                continue
+            candidates.append((gaokao_school_id, info))
+
+        if max_schools is None:
+            max_schools = len(candidates) if wanted_names else 20
+
+        max_consecutive_failures = 5  # 连续失赥次数阀值
+        
+        for school_id, info in candidates[:max_schools]:
+            school_name = info.get("name", "")
+            school_meta = self._extract_school_meta(info)
             
             got_data = False
             for year in self.years:
@@ -217,7 +233,7 @@ class ZhangshangScraper(BaseScraper):
             processed += 1
             
             # 如果连续多次失败，提前结束
-            if failed >= max_consecutive_failures:
+            if not wanted_names and failed >= max_consecutive_failures:
                 print(f"[掌上高考] 连续 {failed} 次获取失败，停止爬取")
                 break
             
@@ -230,37 +246,59 @@ class ZhangshangScraper(BaseScraper):
     def _parse_score_data(self, school_name: str, data: Any, year: int) -> List[Dict]:
         """解析分数线数据为标准格式"""
         records = []
-        
-        if isinstance(data, dict):
-            items = data.get("item", []) or data.get("data", [])
-            if isinstance(items, list):
-                for item in items:
-                    record = {
-                        "school_name": school_name,
-                        "year": year,
-                        "major_name": item.get("spname", item.get("major_name", "未知专业")),
-                        "batch": item.get("batch", "普通类一段"),
-                        "min_score": item.get("min", item.get("min_score")),
-                        "min_rank": item.get("min_section", item.get("min_rank")),
-                        "avg_score": item.get("average", item.get("avg_score")),
-                        "plan_count": item.get("num", item.get("plan_count")),
-                    }
-                    records.append(record)
-        elif isinstance(data, list):
-            for item in data:
-                record = {
-                    "school_name": school_name,
-                    "year": year,
-                    "major_name": item.get("spname", item.get("major_name", "未知专业")),
-                    "batch": item.get("batch", "普通类一段"),
-                    "min_score": item.get("min", item.get("min_score")),
-                    "min_rank": item.get("min_section", item.get("min_rank")),
-                    "avg_score": item.get("average", item.get("avg_score")),
-                    "plan_count": item.get("num", item.get("plan_count")),
-                }
+
+        for item in self._iter_score_items(data):
+            major_name = item.get("spname") or item.get("sp_name") or item.get("major_name") or "未知专业"
+            record = {
+                "school_name": school_name,
+                "year": year,
+                "major_name": major_name,
+                "category": item.get("level2_name") or item.get("category"),
+                "batch": item.get("local_batch_name") or item.get("batch") or "普通类一段",
+                "min_score": self._to_int(item.get("min", item.get("min_score"))),
+                "min_rank": self._to_int(item.get("min_section", item.get("min_rank"))),
+                "avg_score": self._to_int(item.get("average", item.get("avg_score"))),
+                "plan_count": self._to_int(item.get("lq_num", item.get("num", item.get("plan_count")))),
+                "data_source": "gaokao.cn",
+            }
+            if record["min_score"] is not None or record["min_rank"] is not None:
                 records.append(record)
         
         return records
+
+    def _iter_score_items(self, data: Any) -> List[Dict]:
+        """Flatten gaokao.cn score payload blocks into item rows."""
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+
+        if not isinstance(data, dict):
+            return []
+
+        items = data.get("item")
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+
+        nested = data.get("data")
+        if nested is not None and nested is not data:
+            return self._iter_score_items(nested)
+
+        flattened = []
+        for block in data.values():
+            if isinstance(block, dict):
+                block_items = block.get("item")
+                if isinstance(block_items, list):
+                    flattened.extend(item for item in block_items if isinstance(item, dict))
+            elif isinstance(block, list):
+                flattened.extend(item for item in block if isinstance(item, dict))
+        return flattened
+
+    def _to_int(self, value) -> Optional[int]:
+        if value in (None, "", "-"):
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
     
     def save(self, data: List[Dict[str, Any]]):
         """
@@ -305,6 +343,7 @@ class ZhangshangScraper(BaseScraper):
                 record.get("avg_score"),
                 record.get("plan_count"),
                 record.get("actual_count"),
+                record.get("data_source", "gaokao.cn"),
             )
 
         print(f"[掌上高考] 数据保存完成")

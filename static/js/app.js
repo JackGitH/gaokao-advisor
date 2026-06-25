@@ -221,6 +221,47 @@ function asPercent(value) {
     return Math.max(0, Math.min(100, Math.round(pct)));
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[ch]));
+}
+
+function renderSuggestedMajors(majors) {
+    if (!majors || majors.length === 0) return '';
+
+    const rows = majors.slice(0, 4).map(m => {
+        const probPct = asPercent(m.probability);
+        const fit = m.fit_label || '参考';
+        const fitClass = fit === '稳' ? 'stable' : (fit === '可冲' || fit === '风险高' ? 'reach' : 'match');
+        const scoreText = m.latest_score ? `${m.latest_score}分` : (m.avg_score ? `均${m.avg_score}分` : '-');
+        const rankText = m.latest_rank ? `${Number(m.latest_rank).toLocaleString()}位` : (m.avg_rank ? `均${Number(m.avg_rank).toLocaleString()}位` : '-');
+
+        return `
+        <div class="major-suggestion-item">
+            <div class="major-suggestion-main">
+                <span class="major-suggestion-name">${escapeHtml(m.major_name)}</span>
+                <span class="major-fit ${fitClass}">${escapeHtml(fit)}</span>
+            </div>
+            <div class="major-suggestion-meta">
+                <span>${scoreText}</span>
+                <span>${rankText}</span>
+                <span>概率 ${probPct}%</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    return `
+    <div class="card-major-suggestions">
+        <div class="major-suggestion-title">建议专业</div>
+        <div class="major-suggestion-list">${rows}</div>
+    </div>`;
+}
+
 // ============ Render: Statistics ============
 function renderStatistics(data) {
     const { user_input, statistics } = data;
@@ -278,6 +319,7 @@ function renderSchoolCards(schools, category, container) {
         const matchPct = asPercent(s.match_score);
         const probPct = asPercent(s.probability);
         const stabilityPct = asPercent(s.stability);
+        const suggestedMajors = renderSuggestedMajors(s.suggested_majors || []);
 
         const historyRows = (s.history || []).map(h =>
             `<tr><td>${h.year}</td><td>${h.min_score}</td><td>${h.min_rank ? h.min_rank.toLocaleString() : '-'}</td></tr>`
@@ -314,6 +356,7 @@ function renderSchoolCards(schools, category, container) {
                 <div class="match-bar-bg"><div class="match-bar-fill" style="width:${matchPct}%"></div></div>
                 <div class="match-bar-text">匹配度 ${matchPct}%</div>
             </div>
+            ${suggestedMajors}
             ${historyRows ? `
             <div class="card-history">
                 <table class="history-table">

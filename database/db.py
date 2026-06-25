@@ -35,6 +35,7 @@ def init_db():
     conn = get_connection()
     try:
         _init_schema(conn)
+        _ensure_schema_migrations(conn)
         _deduplicate_existing_data(conn)
         _ensure_unique_indexes(conn)
     finally:
@@ -49,6 +50,19 @@ UNIQUE_INDEXES = [
     """CREATE UNIQUE INDEX IF NOT EXISTS uq_admission_record_identity
        ON admission_records(year, school_id, major_id, IFNULL(batch, ''));""",
 ]
+
+
+def _ensure_schema_migrations(conn: sqlite3.Connection):
+    """Apply lightweight migrations for existing SQLite databases."""
+    admission_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(admission_records)").fetchall()
+    }
+    if "data_source" not in admission_columns:
+        conn.execute(
+            "ALTER TABLE admission_records ADD COLUMN data_source TEXT DEFAULT 'seed'"
+        )
+    conn.commit()
 
 
 def _canonical_id_map(conn: sqlite3.Connection, table: str) -> Dict[int, int]:
@@ -206,7 +220,8 @@ def insert_major(name: str, category: str = None, hot_trend: str = None) -> int:
 def insert_admission_record(year: int, school_id: int, major_id: int,
                             batch: str = None, min_score: int = None,
                             min_rank: int = None, avg_score: int = None,
-                            plan_count: int = None, actual_count: int = None) -> int:
+                            plan_count: int = None, actual_count: int = None,
+                            data_source: str = "seed") -> int:
     """
     插入录取记录
     
@@ -227,18 +242,19 @@ def insert_admission_record(year: int, school_id: int, major_id: int,
                        min_rank = COALESCE(?, min_rank),
                        avg_score = COALESCE(?, avg_score),
                        plan_count = COALESCE(?, plan_count),
-                       actual_count = COALESCE(?, actual_count)
+                       actual_count = COALESCE(?, actual_count),
+                       data_source = COALESCE(?, data_source)
                    WHERE id = ?""",
-                (min_score, min_rank, avg_score, plan_count, actual_count, row["id"])
+                (min_score, min_rank, avg_score, plan_count, actual_count, data_source, row["id"])
             )
             conn.commit()
             return row["id"]
 
         cursor = conn.execute(
-            """INSERT INTO admission_records 
-               (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count)
+            """INSERT INTO admission_records
+               (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, data_source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, data_source)
         )
         conn.commit()
         return cursor.lastrowid
@@ -329,7 +345,13 @@ def query_schools_by_rank_range(min_rank: int, max_rank: int, year: int) -> List
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT s.*,
+            """WITH real_years AS (
+                   SELECT school_id, year
+                   FROM admission_records
+                   WHERE COALESCE(data_source, 'seed') != 'seed'
+                   GROUP BY school_id, year
+               )
+               SELECT s.*,
                       ? as year,
                       CAST(AVG(ar.min_rank) AS INTEGER) as min_rank,
                       CAST(AVG(ar.min_score) AS INTEGER) as min_score,
@@ -338,7 +360,10 @@ def query_schools_by_rank_range(min_rank: int, max_rank: int, year: int) -> List
                FROM schools s
                JOIN admission_records ar ON s.id = ar.school_id
                JOIN majors m ON ar.major_id = m.id
-               WHERE ar.year = ? AND ar.min_rank BETWEEN ? AND ?
+               LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
+               WHERE ar.year = ?
+                 AND ar.min_rank BETWEEN ? AND ?
+                 AND (ry.school_id IS NULL OR COALESCE(ar.data_source, 'seed') != 'seed')
                GROUP BY s.id
                ORDER BY min_rank ASC""",
             (year, year, min_rank, max_rank)
@@ -363,19 +388,35 @@ def query_admission_by_school(school_id: int, year: int = None) -> List[Dict[str
     try:
         if year:
             rows = conn.execute(
-                """SELECT ar.*, m.name as major_name, m.category
+                """WITH real_years AS (
+                       SELECT school_id, year
+                       FROM admission_records
+                       WHERE COALESCE(data_source, 'seed') != 'seed'
+                       GROUP BY school_id, year
+                   )
+                   SELECT ar.*, m.name as major_name, m.category
                    FROM admission_records ar
                    JOIN majors m ON ar.major_id = m.id
+                   LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
                    WHERE ar.school_id = ? AND ar.year = ?
+                     AND (ry.school_id IS NULL OR COALESCE(ar.data_source, 'seed') != 'seed')
                    ORDER BY ar.min_rank ASC""",
                 (school_id, year)
             ).fetchall()
         else:
             rows = conn.execute(
-                """SELECT ar.*, m.name as major_name, m.category
+                """WITH real_years AS (
+                       SELECT school_id, year
+                       FROM admission_records
+                       WHERE COALESCE(data_source, 'seed') != 'seed'
+                       GROUP BY school_id, year
+                   )
+                   SELECT ar.*, m.name as major_name, m.category
                    FROM admission_records ar
                    JOIN majors m ON ar.major_id = m.id
+                   LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
                    WHERE ar.school_id = ?
+                     AND (ry.school_id IS NULL OR COALESCE(ar.data_source, 'seed') != 'seed')
                    ORDER BY ar.year DESC, ar.min_rank ASC""",
                 (school_id,)
             ).fetchall()

@@ -104,6 +104,7 @@ async def recommend(
                 "avg_rank": s.get("avg_rank", 0),
                 "avg_score": s.get("avg_score", 0),
                 "major_categories": s.get("major_categories", []),
+                "suggested_majors": s.get("suggested_majors", []),
                 "history": [
                     {"year": y, "min_score": sc, "min_rank": rk}
                     for y, sc, rk in zip(

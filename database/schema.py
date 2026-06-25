@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS admission_records (
     avg_score INTEGER,       -- 平均录取分
     plan_count INTEGER,      -- 计划招生人数
     actual_count INTEGER,    -- 实际录取人数
+    data_source TEXT DEFAULT 'seed', -- 数据来源：seed/gaokao.cn等
     FOREIGN KEY (school_id) REFERENCES schools(id),
     FOREIGN KEY (major_id) REFERENCES majors(id)
 );

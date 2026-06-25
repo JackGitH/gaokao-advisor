@@ -219,6 +219,12 @@ class SchoolMatcher:
         reach_schools = self.ranker.rank_schools(reach_schools, user_rank, sort_by=sort_by)
         match_schools = self.ranker.rank_schools(match_schools, user_rank, sort_by=sort_by)
         safety_schools = self.ranker.rank_schools(safety_schools, user_rank, sort_by=sort_by)
+        reach_schools, match_schools, safety_schools = self._dedupe_recommendation_buckets(
+            reach_schools,
+            match_schools,
+            safety_schools,
+            sort_by,
+        )
 
         if not (reach_schools or match_schools or safety_schools):
             fallback_schools = self._query_nearest_schools(user_rank, limit=200)
@@ -229,6 +235,10 @@ class SchoolMatcher:
             )
             if sort_by == "match_score":
                 match_schools.sort(key=lambda s: abs((s.get("avg_rank") or 0) - user_rank))
+
+        self._attach_suggested_majors(reach_schools, user_rank)
+        self._attach_suggested_majors(match_schools, user_rank)
+        self._attach_suggested_majors(safety_schools, user_rank)
 
         # 6. 统计
         all_schools = reach_schools + match_schools + safety_schools
@@ -397,7 +407,13 @@ class SchoolMatcher:
         conn = get_connection()
         try:
             rows = conn.execute(
-                f"""SELECT s.*,
+                f"""WITH real_years AS (
+                       SELECT school_id, year
+                       FROM admission_records
+                       WHERE COALESCE(data_source, 'seed') != 'seed'
+                       GROUP BY school_id, year
+                   )
+                   SELECT s.*,
                           ar.year as year,
                           CAST(AVG(ar.min_rank) AS INTEGER) as min_rank,
                           CAST(AVG(ar.min_score) AS INTEGER) as min_score,
@@ -405,7 +421,9 @@ class SchoolMatcher:
                    FROM schools s
                    JOIN admission_records ar ON s.id = ar.school_id
                    JOIN majors m ON ar.major_id = m.id
+                   LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
                    WHERE ar.year IN ({placeholders})
+                     AND (ry.school_id IS NULL OR COALESCE(ar.data_source, 'seed') != 'seed')
                    GROUP BY s.id, ar.year
                    ORDER BY ABS(CAST(AVG(ar.min_rank) AS INTEGER) - ?) ASC
                    LIMIT ?""",
@@ -465,6 +483,187 @@ class SchoolMatcher:
             ]
 
         return filtered
+
+    def _dedupe_recommendation_buckets(
+        self,
+        reach_schools: list,
+        match_schools: list,
+        safety_schools: list,
+        sort_by: str,
+    ) -> Tuple[list, list, list]:
+        """Ensure each school appears in only one risk bucket."""
+        bucket_order = [
+            ("reach", reach_schools),
+            ("match", match_schools),
+            ("safety", safety_schools),
+        ]
+        bucket_priority = {"match": 2, "safety": 1, "reach": 0}
+        best_by_school = {}
+
+        for bucket_name, schools in bucket_order:
+            for index, school in enumerate(schools):
+                sid = school.get("id")
+                if sid is None:
+                    continue
+
+                current = best_by_school.get(sid)
+                candidate_score = (
+                    school.get("match_score", 0),
+                    bucket_priority.get(bucket_name, 0),
+                    -index,
+                )
+                if current is None or candidate_score > current["score"]:
+                    best_by_school[sid] = {
+                        "bucket": bucket_name,
+                        "school": school,
+                        "score": candidate_score,
+                    }
+
+        deduped = {"reach": [], "match": [], "safety": []}
+        for item in best_by_school.values():
+            deduped[item["bucket"]].append(item["school"])
+
+        return (
+            self._sort_ranked_schools(deduped["reach"], sort_by),
+            self._sort_ranked_schools(deduped["match"], sort_by),
+            self._sort_ranked_schools(deduped["safety"], sort_by),
+        )
+
+    def _sort_ranked_schools(self, schools: list, sort_by: str) -> list:
+        """Sort already-ranked schools without recalculating scores."""
+        sort_fields = {
+            "match_score": "match_score",
+            "school_level": "school_level_score",
+            "stability": "stability",
+            "probability": "probability",
+        }
+        field = sort_fields.get(sort_by, "match_score")
+        schools.sort(key=lambda s: s.get(field, 0), reverse=True)
+        return schools
+
+    def _attach_suggested_majors(self, schools: list, user_rank: int):
+        """Add major-level suggestions to school cards."""
+        for school in schools:
+            school["suggested_majors"] = self._get_suggested_majors(
+                school.get("id"),
+                user_rank,
+            )
+
+    def _get_suggested_majors(self, school_id: int, user_rank: int, limit: int = 5) -> list:
+        """Recommend majors in a school based on recent major admission ranks."""
+        if not school_id or not user_rank:
+            return []
+
+        years = self.years[-3:]
+        placeholders = ",".join("?" * len(years))
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"""WITH real_years AS (
+                       SELECT school_id, year
+                       FROM admission_records
+                       WHERE COALESCE(data_source, 'seed') != 'seed'
+                       GROUP BY school_id, year
+                   )
+                   SELECT m.id as major_id,
+                          m.name as major_name,
+                          m.category as category,
+                          ar.year as year,
+                          ar.min_score as min_score,
+                          ar.min_rank as min_rank,
+                          ar.avg_score as avg_score,
+                          ar.plan_count as plan_count
+                   FROM admission_records ar
+                   JOIN majors m ON ar.major_id = m.id
+                   LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
+                   WHERE ar.school_id = ?
+                     AND ar.year IN ({placeholders})
+                     AND ar.min_rank IS NOT NULL
+                     AND (ry.school_id IS NULL OR COALESCE(ar.data_source, 'seed') != 'seed')
+                   ORDER BY m.id, ar.year DESC""",
+                [school_id, *years],
+            ).fetchall()
+        finally:
+            conn.close()
+
+        majors_map = {}
+        for row in rows:
+            major_id = row["major_id"]
+            if major_id not in majors_map:
+                majors_map[major_id] = {
+                    "major_id": major_id,
+                    "major_name": row["major_name"],
+                    "category": row["category"],
+                    "ranks": [],
+                    "scores": [],
+                    "history": [],
+                }
+
+            data = majors_map[major_id]
+            data["ranks"].append(row["min_rank"])
+            if row["min_score"] is not None:
+                data["scores"].append(row["min_score"])
+            data["history"].append({
+                "year": row["year"],
+                "min_score": row["min_score"],
+                "min_rank": row["min_rank"],
+                "plan_count": row["plan_count"],
+            })
+
+        suggestions = []
+        for data in majors_map.values():
+            valid_ranks = [r for r in data["ranks"] if r is not None]
+            if not valid_ranks:
+                continue
+
+            avg_rank = int(sum(valid_ranks) / len(valid_ranks))
+            avg_score = int(sum(data["scores"]) / len(data["scores"])) if data["scores"] else None
+            probability = self.ranker.calculate_admission_probability(user_rank, valid_ranks)
+            proximity = max(0, 1 - abs(user_rank - avg_rank) / max(user_rank, 1))
+
+            if probability >= 0.8:
+                fit_label = "稳"
+            elif probability >= 0.45:
+                fit_label = "可报"
+            elif probability >= 0.18:
+                fit_label = "可冲"
+            else:
+                fit_label = "风险高"
+
+            latest_history = sorted(
+                data["history"],
+                key=lambda item: item["year"],
+                reverse=True,
+            )
+
+            suggestions.append({
+                "major_id": data["major_id"],
+                "major_name": data["major_name"],
+                "category": data["category"],
+                "fit_label": fit_label,
+                "probability": probability,
+                "avg_rank": avg_rank,
+                "avg_score": avg_score,
+                "latest_year": latest_history[0]["year"] if latest_history else None,
+                "latest_score": latest_history[0]["min_score"] if latest_history else None,
+                "latest_rank": latest_history[0]["min_rank"] if latest_history else None,
+                "history": latest_history,
+                "_sort_score": proximity * 0.55 + probability * 0.45,
+            })
+
+        suggestions.sort(
+            key=lambda item: (
+                item["_sort_score"],
+                item["probability"],
+                -abs(user_rank - item["avg_rank"]),
+            ),
+            reverse=True,
+        )
+
+        for item in suggestions:
+            item.pop("_sort_score", None)
+
+        return suggestions[:limit]
 
     def _calculate_major_trend(self, years_data: dict) -> dict:
         """
