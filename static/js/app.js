@@ -50,6 +50,10 @@ const DOM = {
 // ============ State ============
 let currentData = null;   // 最近一次推荐结果
 let scoreLinesData = null; // 批次线数据缓存
+let conversionTimer = null;
+let conversionSeq = 0;
+let syncingInputs = false;
+let lastInputSource = null;
 
 // ============ API Functions ============
 
@@ -74,6 +78,13 @@ function fetchRecommendations(params) {
     if (params.province)   qs.set('province', params.province);
     if (params.sort_by)    qs.set('sort_by', params.sort_by);
     return apiFetch('/recommend?' + qs.toString());
+}
+
+function fetchConversion(params) {
+    const qs = new URLSearchParams();
+    if (params.score) qs.set('score', params.score);
+    if (params.rank) qs.set('rank', params.rank);
+    return apiFetch('/convert?' + qs.toString());
 }
 
 function fetchSchoolDetail(schoolId) {
@@ -116,6 +127,46 @@ function getProvinceFilter() {
     return el ? el.value : '';
 }
 
+function scheduleInputConversion(source) {
+    if (syncingInputs) return;
+    lastInputSource = source;
+    clearTimeout(conversionTimer);
+
+    conversionTimer = setTimeout(async () => {
+        const seq = ++conversionSeq;
+        const score = DOM.scoreInput.value.trim();
+        const rank = DOM.rankInput.value.trim();
+
+        if (source === 'score') {
+            const scoreNum = Number(score);
+            if (!score || scoreNum < 0 || scoreNum > 750) return;
+            try {
+                const data = await fetchConversion({ score });
+                if (seq !== conversionSeq || data.rank == null) return;
+                syncingInputs = true;
+                DOM.rankInput.value = data.rank;
+                syncingInputs = false;
+                hideError();
+            } catch (err) {
+                syncingInputs = false;
+            }
+        } else if (source === 'rank') {
+            const rankNum = Number(rank);
+            if (!rank || rankNum < 1) return;
+            try {
+                const data = await fetchConversion({ rank });
+                if (seq !== conversionSeq || data.score == null) return;
+                syncingInputs = true;
+                DOM.scoreInput.value = data.score;
+                syncingInputs = false;
+                hideError();
+            } catch (err) {
+                syncingInputs = false;
+            }
+        }
+    }, 350);
+}
+
 // ============ "全部"复选框联动 ============
 function setupSchoolTypeCheckboxes() {
     const allCb = document.querySelector('input[name="schoolType"][value=""]');
@@ -147,6 +198,7 @@ function typeTag(type) {
         '985': '<span class="tag tag-985">985</span>',
         '211': '<span class="tag tag-211">211</span>',
         '双一流': '<span class="tag tag-syl">双一流</span>',
+        '高职专科': '<span class="tag tag-normal">高职专科</span>',
     };
     return map[type] || `<span class="tag tag-normal">${type}</span>`;
 }
@@ -397,8 +449,17 @@ async function doSearch() {
     showLoading();
 
     const params = {};
-    if (score) params.score = score;
-    if (rank) params.rank = rank;
+    if (score && rank) {
+        if (lastInputSource === 'rank') {
+            params.rank = rank;
+        } else {
+            params.score = score;
+        }
+    } else if (score) {
+        params.score = score;
+    } else if (rank) {
+        params.rank = rank;
+    }
 
     const schoolType = getSchoolTypeFilter();
     if (schoolType) params.school_type = schoolType;
@@ -466,6 +527,8 @@ function init() {
     // 回车搜索
     DOM.scoreInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
     DOM.rankInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+    DOM.scoreInput.addEventListener('input', () => scheduleInputConversion('score'));
+    DOM.rankInput.addEventListener('input', () => scheduleInputConversion('rank'));
 
     // 关闭错误
     DOM.errorClose.addEventListener('click', hideError);

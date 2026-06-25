@@ -220,6 +220,14 @@ class SchoolMatcher:
         match_schools = self.ranker.rank_schools(match_schools, user_rank, sort_by=sort_by)
         safety_schools = self.ranker.rank_schools(safety_schools, user_rank, sort_by=sort_by)
 
+        if not (reach_schools or match_schools or safety_schools):
+            fallback_schools = self._query_nearest_schools(user_rank)
+            if filters:
+                fallback_schools = self._apply_filters(fallback_schools, filters)
+            match_schools = self.ranker.rank_schools(
+                fallback_schools[:30], user_rank, sort_by=sort_by
+            )
+
         # 6. 统计
         all_schools = reach_schools + match_schools + safety_schools
         in_province = sum(1 for s in all_schools if s.get("province") == "山东")
@@ -309,48 +317,31 @@ class SchoolMatcher:
 
     # ==================== 内部辅助方法 ====================
 
-    def _query_schools_multi_year(self, min_rank: int, max_rank: int) -> list:
-        """
-        综合多年数据查询匹配学校
+    def _append_school_row(self, schools_map: dict, school: dict, year: int = None):
+        sid = school["id"]
+        if sid not in schools_map:
+            schools_map[sid] = {
+                "id": sid,
+                "name": school["name"],
+                "province": school.get("province"),
+                "city": school.get("city"),
+                "type": school.get("type"),
+                "level": school.get("level"),
+                "features": school.get("features"),
+                "min_ranks": [],
+                "min_scores": [],
+                "years_matched": [],
+                "major_categories": set(),
+            }
+        schools_map[sid]["min_ranks"].append(school.get("min_rank"))
+        schools_map[sid]["min_scores"].append(school.get("min_score"))
+        schools_map[sid]["years_matched"].append(school.get("year", year))
+        categories = school.get("major_categories") or ""
+        schools_map[sid]["major_categories"].update(
+            c for c in categories.split(",") if c
+        )
 
-        使用最近3年数据的中位数作为参考
-
-        Args:
-            min_rank: 最小排名
-            max_rank: 最大排名
-
-        Returns:
-            去重后的学校列表，附带多年数据统计
-        """
-        schools_map = {}  # school_id -> aggregated data
-
-        for year in self.years[-3:]:  # 使用最近3年
-            schools = query_schools_by_rank_range(min_rank, max_rank, year)
-            for school in schools:
-                sid = school["id"]
-                if sid not in schools_map:
-                    schools_map[sid] = {
-                        "id": sid,
-                        "name": school["name"],
-                        "province": school.get("province"),
-                        "city": school.get("city"),
-                        "type": school.get("type"),
-                        "level": school.get("level"),
-                        "features": school.get("features"),
-                        "min_ranks": [],
-                        "min_scores": [],
-                        "years_matched": [],
-                        "major_categories": set(),
-                    }
-                schools_map[sid]["min_ranks"].append(school.get("min_rank"))
-                schools_map[sid]["min_scores"].append(school.get("min_score"))
-                schools_map[sid]["years_matched"].append(school.get("year", year))
-                categories = school.get("major_categories") or ""
-                schools_map[sid]["major_categories"].update(
-                    c for c in categories.split(",") if c
-                )
-
-        # 计算统计值
+    def _finalize_schools(self, schools_map: dict) -> list:
         result = []
         for sid, data in schools_map.items():
             valid_ranks = [r for r in data["min_ranks"] if r is not None]
@@ -374,6 +365,60 @@ class SchoolMatcher:
             result.append(data)
 
         return result
+
+    def _query_schools_multi_year(self, min_rank: int, max_rank: int) -> list:
+        """
+        综合多年数据查询匹配学校
+
+        使用最近3年数据的中位数作为参考
+
+        Args:
+            min_rank: 最小排名
+            max_rank: 最大排名
+
+        Returns:
+            去重后的学校列表，附带多年数据统计
+        """
+        schools_map = {}  # school_id -> aggregated data
+
+        for year in self.years[-3:]:  # 使用最近3年
+            schools = query_schools_by_rank_range(min_rank, max_rank, year)
+            for school in schools:
+                self._append_school_row(schools_map, school, year)
+
+        return self._finalize_schools(schools_map)
+
+    def _query_nearest_schools(self, user_rank: int, limit: int = 60) -> list:
+        """When no bucket matches exactly, return schools closest to the user rank."""
+        years = self.years[-3:]
+        placeholders = ",".join("?" * len(years))
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"""SELECT s.*,
+                          ar.year as year,
+                          CAST(AVG(ar.min_rank) AS INTEGER) as min_rank,
+                          CAST(AVG(ar.min_score) AS INTEGER) as min_score,
+                          GROUP_CONCAT(DISTINCT m.category) as major_categories
+                   FROM schools s
+                   JOIN admission_records ar ON s.id = ar.school_id
+                   JOIN majors m ON ar.major_id = m.id
+                   WHERE ar.year IN ({placeholders})
+                   GROUP BY s.id, ar.year
+                   ORDER BY ABS(CAST(AVG(ar.min_rank) AS INTEGER) - ?) ASC
+                   LIMIT ?""",
+                [*years, user_rank, limit * 3],
+            ).fetchall()
+        finally:
+            conn.close()
+
+        schools_map = {}
+        for row in rows:
+            self._append_school_row(schools_map, dict(row), row["year"])
+
+        schools = self._finalize_schools(schools_map)
+        schools.sort(key=lambda s: abs((s.get("avg_rank") or 0) - user_rank))
+        return schools[:limit]
 
     def _apply_filters(self, schools: list, filters: dict) -> list:
         """

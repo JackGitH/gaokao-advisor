@@ -28,6 +28,31 @@ def error_response(code: int, message: str):
 
 # ==================== 1. 核心推荐接口 ====================
 
+@router.get("/convert")
+async def convert_score_rank(
+    score: Optional[int] = Query(None, ge=0, le=750, description="高考分数"),
+    rank: Optional[int] = Query(None, ge=1, description="全省排名"),
+):
+    """分数和位次互转，用于前端输入联动。"""
+    if score is None and rank is None:
+        raise HTTPException(status_code=400, detail="score 和 rank 至少需要提供一个")
+
+    try:
+        converted_score = score
+        converted_rank = rank
+        if score is not None:
+            converted_rank = matcher.score_to_rank(score)
+        if rank is not None:
+            converted_score = matcher.rank_to_score(rank)
+
+        return success_response({
+            "score": converted_score,
+            "rank": converted_rank,
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"分数位次转换失败: {str(e)}")
+
+
 @router.get("/recommend")
 async def recommend(
     score: Optional[int] = Query(None, ge=0, le=750, description="高考分数"),

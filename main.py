@@ -65,12 +65,18 @@ async def startup_event():
     finally:
         conn.close()
 
-    if school_count == 0:
-        print("数据库为空，正在加载种子数据...")
+    try:
+        from scraper.seed import SCHOOLS_DATA
+        expected_school_count = len(SCHOOLS_DATA)
+    except Exception:
+        expected_school_count = 0
+
+    if school_count == 0 or (expected_school_count and school_count < expected_school_count):
+        print("数据库为空或种子数据不完整，正在加载/补齐种子数据...")
         try:
             from scraper.seed import generate_seed_data
             generate_seed_data(save_to_db=True, save_json=False)
-            print("种子数据加载完成")
+            print("种子数据加载/补齐完成")
         except Exception as e:
             print(f"种子数据加载失败: {e}")
 

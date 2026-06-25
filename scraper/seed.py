@@ -135,6 +135,34 @@ SCHOOLS_DATA = [
     ("山东农业大学", "山东", "泰安", "普通本科", "本科一批", "省属", 85000, 150000),
     ("临沂大学", "山东", "临沂", "普通本科", "本科二批", "省属", 120000, 180000),
     ("潍坊学院", "山东", "潍坊", "普通本科", "本科二批", "省属", 140000, 200000),
+    # 低分段普通本科/民办本科，补齐一段线附近到二段线上部推荐
+    ("山东女子学院", "山东", "济南", "普通本科", "本科二批", "省属", 160000, 240000),
+    ("山东青年政治学院", "山东", "济南", "普通本科", "本科二批", "省属", 170000, 250000),
+    ("山东管理学院", "山东", "济南", "普通本科", "本科二批", "省属", 170000, 260000),
+    ("山东协和学院", "山东", "济南", "普通本科", "本科二批", "民办", 190000, 300000),
+    ("烟台南山学院", "山东", "烟台", "普通本科", "本科二批", "民办", 210000, 320000),
+    ("青岛滨海学院", "山东", "青岛", "普通本科", "本科二批", "民办", 230000, 350000),
+    ("潍坊科技学院", "山东", "潍坊", "普通本科", "本科二批", "民办", 230000, 360000),
+    ("齐鲁医药学院", "山东", "淄博", "普通本科", "本科二批", "民办", 180000, 300000),
+    ("青岛黄海学院", "山东", "青岛", "普通本科", "本科二批", "民办", 260000, 390000),
+    ("山东英才学院", "山东", "济南", "普通本科", "本科二批", "民办", 270000, 410000),
+    ("青岛工学院", "山东", "青岛", "普通本科", "本科二批", "民办", 280000, 430000),
+    ("泰山科技学院", "山东", "泰安", "普通本科", "本科二批", "民办", 300000, 450000),
+    ("齐鲁理工学院", "山东", "济南", "普通本科", "本科二批", "民办", 290000, 440000),
+    ("山东华宇工学院", "山东", "德州", "普通本科", "本科二批", "民办", 320000, 470000),
+    # 山东高职专科，补齐普通类二段线附近推荐
+    ("山东商业职业技术学院", "山东", "济南", "高职专科", "专科批", "双高计划", 300000, 500000),
+    ("淄博职业学院", "山东", "淄博", "高职专科", "专科批", "双高计划", 320000, 520000),
+    ("日照职业技术学院", "山东", "日照", "高职专科", "专科批", "双高计划", 350000, 560000),
+    ("山东职业学院", "山东", "济南", "高职专科", "专科批", "省属高职", 340000, 540000),
+    ("青岛职业技术学院", "山东", "青岛", "高职专科", "专科批", "省属高职", 330000, 530000),
+    ("威海职业学院", "山东", "威海", "高职专科", "专科批", "省属高职", 380000, 580000),
+    ("烟台职业学院", "山东", "烟台", "高职专科", "专科批", "省属高职", 390000, 600000),
+    ("潍坊职业学院", "山东", "潍坊", "高职专科", "专科批", "省属高职", 420000, 630000),
+    ("济南职业学院", "山东", "济南", "高职专科", "专科批", "省属高职", 410000, 620000),
+    ("山东科技职业学院", "山东", "潍坊", "高职专科", "专科批", "省属高职", 430000, 650000),
+    ("山东畜牧兽医职业学院", "山东", "潍坊", "高职专科", "专科批", "省属高职", 450000, 660000),
+    ("山东交通职业学院", "山东", "潍坊", "高职专科", "专科批", "省属高职", 460000, 665000),
 ]
 
 # ==================== 专业数据定义 ====================
@@ -253,6 +281,8 @@ def _get_majors_for_school(school_type: str) -> list:
         count = random.randint(8, 12)
     elif school_type == "双一流":
         count = random.randint(6, 10)
+    elif school_type == "高职专科":
+        count = random.randint(4, 7)
     else:
         count = random.randint(5, 8)
     
@@ -301,8 +331,16 @@ def _generate_admission_score(base_rank: int, year: int, major_trend: str) -> tu
         score = random.randint(490, 528)
     elif rank <= 160000:
         score = random.randint(460, 493)
+    elif rank <= 220000:
+        score = random.randint(430, 465)
+    elif rank <= 300000:
+        score = random.randint(400, 445)
+    elif rank <= 400000:
+        score = random.randint(350, 420)
+    elif rank <= 520000:
+        score = random.randint(270, 380)
     else:
-        score = random.randint(430, 463)
+        score = random.randint(150, 320)
     
     avg_score = score + random.randint(2, 8)
     
@@ -345,9 +383,11 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
             conn = get_connection()
             count = conn.execute("SELECT COUNT(*) FROM schools").fetchone()[0]
             conn.close()
-            if count > 0:
+            if count >= len(SCHOOLS_DATA):
                 print(f"[种子数据] 数据库已有 {count} 所学校，跳过生成（使用 force=True 强制重新生成）")
                 return {"schools": count, "skipped": True}
+            if count > 0:
+                print(f"[种子数据] 数据库已有 {count} 所学校，将增量补齐至 {len(SCHOOLS_DATA)} 所")
     
     # 存储生成的数据
     all_schools = []
@@ -410,6 +450,20 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
     
     # ===== 3. 生成录取记录 =====
     years = [2023, 2024, 2025]
+    existing_admission_keys = set()
+    if save_to_db:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT year, school_id, major_id, IFNULL(batch, '') as batch FROM admission_records"
+            ).fetchall()
+            existing_admission_keys = {
+                (row["year"], row["school_id"], row["major_id"], row["batch"])
+                for row in rows
+            }
+        finally:
+            conn.close()
+
     for school_info in SCHOOLS_DATA:
         name, province, city, type_, level, features, rank_min, rank_max = school_info
         school_id = school_ids.get(name)
@@ -436,13 +490,18 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
                 actual_count = plan_count + random.randint(-1, 2)
                 actual_count = max(1, actual_count)
                 
+                batch = "普通类二段" if type_ == "高职专科" else "普通类一段"
+                admission_key = (year, school_id, major_id, batch)
+                if admission_key in existing_admission_keys:
+                    continue
+
                 record = {
                     "year": year,
                     "school_id": school_id,
                     "school_name": name,
                     "major_id": major_id,
                     "major_name": major_name,
-                    "batch": "普通类一段",
+                    "batch": batch,
                     "min_score": min_score,
                     "min_rank": min_rank,
                     "avg_score": avg_score,
@@ -455,9 +514,10 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
                     try:
                         insert_admission_record(
                             year, school_id, major_id,
-                            "普通类一段", min_score, min_rank,
+                            batch, min_score, min_rank,
                             avg_score, plan_count, actual_count
                         )
+                        existing_admission_keys.add(admission_key)
                     except Exception:
                         pass
     
