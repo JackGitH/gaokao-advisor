@@ -6,8 +6,10 @@ services:
     ports:
       - "8001:8001"
     restart: always
+    environment:
+      - DATABASE_PATH=/app/data/gaokao.db
     volumes:
-      - gaokao-data:/app/database
+      - gaokao-data:/app/data
 
 volumes:
   gaokao-data:

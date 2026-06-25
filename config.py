@@ -7,7 +7,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==================== 数据库配置 ====================
-DATABASE_PATH = os.path.join(BASE_DIR, "database", "gaokao.db")
+DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(BASE_DIR, "database", "gaokao.db"))
 
 # ==================== 爬虫配置 ====================
 SCRAPER_CONFIG = {

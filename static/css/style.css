@@ -43,6 +43,8 @@ body {
 }
 .header-title { font-size: 1.6rem; font-weight: 700; letter-spacing: 1px; }
 .header-subtitle { font-size: .85rem; opacity: .85; margin-top: 4px; }
+.header-dev { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 6px; }
+.header-dev-note { font-size: 11px; color: rgba(255,255,255,0.45); }
 
 /* === Input Bar (sticky) === */
 .input-bar {
