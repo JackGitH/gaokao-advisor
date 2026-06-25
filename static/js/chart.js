@@ -31,7 +31,7 @@ const ChartModule = (() => {
     };
 
     /**
-     * 1. 近3年批次线对比 - 柱状图
+     * 1. 近年批次线对比 - 柱状图
      * @param {Object} data - /api/score-lines 返回的 data.years
      */
     function renderScoreLineChart(data) {

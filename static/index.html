@@ -12,7 +12,7 @@
 <!-- 顶部标题栏 -->
 <header class="header">
     <h1 class="header-title">山东高考志愿填报助手</h1>
-    <p class="header-subtitle">基于近3年录取数据智能匹配 · 冲稳保三档科学推荐</p>
+    <p class="header-subtitle">2026官方位次口径 · 基于近3年录取数据智能匹配</p>
     <p class="header-dev">开发者：土豆，微信号 guofly123<span class="header-dev-note">（给外甥女用的，其他同学仅供参考）</span></p>
 </header>
 
@@ -33,7 +33,7 @@
                 <span class="btn-icon">🔍</span><span class="btn-label">查询推荐</span>
             </button>
         </div>
-        <p class="input-hint">💡 推荐优先填写排名：每年分数线波动较大，但排名相对固定（学校招生计划和考生总量基本稳定），用排名匹配结果最准确。</p>
+        <p class="input-hint">💡 分数按2026山东官方一分一段换算位次；院校与专业录取概率仍参考2023-2025历史录取位次。</p>
         <button class="filter-toggle" id="filterToggle" type="button">筛选 / 排序</button>
         <div class="filter-row">
             <div class="filter-group">
@@ -50,6 +50,15 @@
                 <label class="chip-radio"><input type="radio" name="province" value="" checked><span>全部</span></label>
                 <label class="chip-radio"><input type="radio" name="province" value="省内"><span>省内</span></label>
                 <label class="chip-radio"><input type="radio" name="province" value="省外"><span>省外</span></label>
+            </div>
+            <div class="filter-group filter-subjects">
+                <span class="filter-label">选科：</span>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="物理"><span>物理</span></label>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="化学"><span>化学</span></label>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="生物"><span>生物</span></label>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="思想政治"><span>政治</span></label>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="历史"><span>历史</span></label>
+                <label class="chip-checkbox"><input type="checkbox" name="subject" value="地理"><span>地理</span></label>
             </div>
             <div class="filter-group">
                 <span class="filter-label">排序：</span>
@@ -122,10 +131,12 @@
             </div>
             <div class="stat-card stat-line">
                 <div class="stat-value" id="statBatchLine">--</div>
-                <div class="stat-label">一段线(2025)</div>
+                <div class="stat-label">一段线(2026)</div>
                 <div class="stat-extra" id="statSpecialLine">特殊类型线 --</div>
             </div>
         </div>
+
+        <div class="data-notice" id="dataNotice"></div>
 
         <!-- Tab切换 + 学校列表 -->
         <div class="tabs-section">
@@ -158,7 +169,7 @@
             <h2 class="section-title">📊 数据可视化</h2>
             <div class="charts-grid">
                 <div class="chart-card">
-                    <h3>近3年批次线对比</h3>
+                    <h3>近年批次线对比</h3>
                     <div class="chart-wrap"><canvas id="chartScoreLine"></canvas></div>
                 </div>
                 <div class="chart-card">
@@ -181,7 +192,7 @@
 
 <!-- 底部信息 -->
 <footer class="footer">
-    <p class="footer-source">数据来源：山东省教育招生考试院公开数据（2023-2025年）</p>
+    <p class="footer-source">数据来源：山东省教育招生考试院公开数据；2026分数线/一分一段，2023-2025院校专业录取历史数据。</p>
     <p class="footer-disclaimer">⚠️ 免责声明：本系统数据及推荐结果仅供参考，不构成正式志愿填报建议。最终填报请以官方公布数据为准。</p>
 </footer>
 

@@ -41,6 +41,7 @@ class AdmissionRecord(BaseModel):
     avg_score: Optional[int] = None
     plan_count: Optional[int] = None
     actual_count: Optional[int] = None
+    subject_requirement: Optional[str] = None
 
 
 class RankingEntry(BaseModel):
@@ -58,6 +59,7 @@ class RecommendRequest(BaseModel):
     score: int = Field(..., description="高考分数", ge=0, le=750)
     year: int = Field(..., description="高考年份")
     rank: Optional[int] = Field(None, description="位次，如不提供则自动根据分数查询")
+    selected_subjects: Optional[List[str]] = Field(None, description="选考科目")
     preferred_provinces: Optional[List[str]] = Field(None, description="意向省份列表")
     preferred_majors: Optional[List[str]] = Field(None, description="意向专业类别")
     school_types: Optional[List[str]] = Field(None, description="学校类型筛选：985/211/双一流/普通本科/高职专科")

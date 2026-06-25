@@ -269,6 +269,18 @@ body {
 .stat-label { font-size: .78rem; color: var(--c-text-light); margin-top: 2px; }
 .stat-extra { font-size: .72rem; color: var(--c-text-light); margin-top: 4px; }
 
+.data-notice {
+    margin: -8px 0 16px;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-left: 3px solid var(--c-accent);
+    border-radius: var(--radius);
+    background: #fffaf0;
+    color: #5f4b2f;
+    font-size: .78rem;
+    line-height: 1.5;
+}
+
 /* === Tabs === */
 .tabs-section { margin-bottom: 24px; }
 .tabs-header {
@@ -600,6 +612,9 @@ body {
         padding: 8px 12px 12px;
     }
     body.has-results .stats-cards {
+        display: none;
+    }
+    body.has-results .data-notice {
         display: none;
     }
     .input-bar.results-mode .input-bar-inner {

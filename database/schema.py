@@ -1,6 +1,6 @@
 """
 高考志愿推荐系统 - 数据库表结构定义
-包含5张核心表：schools, majors, admission_records, score_lines, ranking_table
+包含核心表：schools, majors, admission_records, score_lines, ranking_table, subject_ranking_table
 """
 
 # ==================== 建表 DDL ====================
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS admission_records (
     avg_score INTEGER,       -- 平均录取分
     plan_count INTEGER,      -- 计划招生人数
     actual_count INTEGER,    -- 实际录取人数
+    subject_requirement TEXT, -- 专业选考科目要求：不限/物理/物理,化学等
     data_source TEXT DEFAULT 'seed', -- 数据来源：seed/gaokao.cn等
     FOREIGN KEY (school_id) REFERENCES schools(id),
     FOREIGN KEY (major_id) REFERENCES majors(id)
@@ -64,6 +65,17 @@ CREATE TABLE IF NOT EXISTS ranking_table (
 );
 """
 
+CREATE_SUBJECT_RANKING_TABLE = """
+CREATE TABLE IF NOT EXISTS subject_ranking_table (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER NOT NULL,
+    subject TEXT NOT NULL,       -- 选考科目：物理/化学/生物/思想政治/历史/地理
+    score INTEGER NOT NULL,
+    same_score_count INTEGER,
+    cumulative_count INTEGER
+);
+"""
+
 # 所有建表语句列表
 ALL_TABLES = [
     CREATE_SCHOOLS_TABLE,
@@ -71,6 +83,7 @@ ALL_TABLES = [
     CREATE_ADMISSION_RECORDS_TABLE,
     CREATE_SCORE_LINES_TABLE,
     CREATE_RANKING_TABLE,
+    CREATE_SUBJECT_RANKING_TABLE,
 ]
 
 # ==================== 索引 ====================
@@ -80,7 +93,9 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_admission_school ON admission_records(school_id);",
     "CREATE INDEX IF NOT EXISTS idx_admission_major ON admission_records(major_id);",
     "CREATE INDEX IF NOT EXISTS idx_admission_rank ON admission_records(min_rank);",
+    "CREATE INDEX IF NOT EXISTS idx_admission_subject_requirement ON admission_records(subject_requirement);",
     "CREATE INDEX IF NOT EXISTS idx_ranking_year_score ON ranking_table(year, score);",
+    "CREATE INDEX IF NOT EXISTS idx_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
     "CREATE INDEX IF NOT EXISTS idx_score_lines_year ON score_lines(year, batch);",
     "CREATE INDEX IF NOT EXISTS idx_schools_type ON schools(type);",
 ]
@@ -104,4 +119,4 @@ def init_db(connection):
         cursor.execute(index_sql)
     
     connection.commit()
-    print("数据库初始化完成：5张表和索引已创建")
+    print("数据库初始化完成：6张表和索引已创建")

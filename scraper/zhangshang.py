@@ -259,6 +259,13 @@ class ZhangshangScraper(BaseScraper):
                 "min_rank": self._to_int(item.get("min_section", item.get("min_rank"))),
                 "avg_score": self._to_int(item.get("average", item.get("avg_score"))),
                 "plan_count": self._to_int(item.get("lq_num", item.get("num", item.get("plan_count")))),
+                "subject_requirement": self._normalize_subject_requirement(
+                    item.get("sg_info")
+                    or item.get("sg_name")
+                    or item.get("subject_requirement")
+                    or item.get("subject_require")
+                    or item.get("require_subject")
+                ),
                 "data_source": "gaokao.cn",
             }
             if record["min_score"] is not None or record["min_rank"] is not None:
@@ -295,6 +302,23 @@ class ZhangshangScraper(BaseScraper):
     def _to_int(self, value) -> Optional[int]:
         if value in (None, "", "-"):
             return None
+
+    def _normalize_subject_requirement(self, value) -> Optional[str]:
+        if value in (None, "", "-", "无"):
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if "不限" in text:
+            return "不限"
+
+        subjects = []
+        for label in ("物理", "化学", "生物", "思想政治", "政治", "历史", "地理"):
+            if label in text:
+                normalized = "思想政治" if label == "政治" else label
+                if normalized not in subjects:
+                    subjects.append(normalized)
+        return ",".join(subjects) if subjects else text
         try:
             return int(float(value))
         except (TypeError, ValueError):
@@ -344,6 +368,7 @@ class ZhangshangScraper(BaseScraper):
                 record.get("plan_count"),
                 record.get("actual_count"),
                 record.get("data_source", "gaokao.cn"),
+                record.get("subject_requirement"),
             )
 
         print(f"[掌上高考] 数据保存完成")

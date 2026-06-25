@@ -32,11 +32,15 @@ class SchoolMatcher:
         """
         self.db_path = db_path or DATABASE_PATH
         self.ranker = SchoolRanker()
-        self.years = ALGORITHM_CONFIG.get("default_years", [2022, 2023, 2024, 2025])
+        self.score_rank_year = ALGORITHM_CONFIG.get("score_rank_year", 2026)
+        self.years = ALGORITHM_CONFIG.get(
+            "admission_reference_years",
+            ALGORITHM_CONFIG.get("default_years", [2023, 2024, 2025]),
+        )
 
     # ==================== 分数/排名转换 ====================
 
-    def score_to_rank(self, score: int, year: int = 2025) -> int:
+    def score_to_rank(self, score: int, year: int = None) -> int:
         """
         分数转排名：查询一分一段表
 
@@ -49,6 +53,8 @@ class SchoolMatcher:
         Returns:
             对应排名（位次）
         """
+        year = year or self.score_rank_year
+
         # 先尝试精确匹配
         rank = get_rank_by_score(score, year)
         if rank is not None:
@@ -87,7 +93,7 @@ class SchoolMatcher:
         finally:
             conn.close()
 
-    def rank_to_score(self, rank: int, year: int = 2025) -> int:
+    def rank_to_score(self, rank: int, year: int = None) -> int:
         """
         排名转分数：查询一分一段表
 
@@ -98,6 +104,8 @@ class SchoolMatcher:
         Returns:
             对应分数
         """
+        year = year or self.score_rank_year
+
         score = get_score_by_rank(rank, year)
         if score is not None:
             return score
@@ -164,7 +172,8 @@ class SchoolMatcher:
     # ==================== 主匹配方法 ====================
 
     def match(self, score: int = None, rank: int = None,
-              filters: dict = None, sort_by: str = "match_score") -> dict:
+              filters: dict = None, sort_by: str = "match_score",
+              year: int = None, selected_subjects: list = None) -> dict:
         """
         主匹配方法
 
@@ -185,13 +194,15 @@ class SchoolMatcher:
             raise ValueError("score 和 rank 必须至少提供一个")
 
         # 1. 分数排名互转
+        score_rank_year = year or self.score_rank_year
+
         if rank is None:
-            user_rank = self.score_to_rank(score)
+            user_rank = self.score_to_rank(score, score_rank_year)
         else:
             user_rank = rank
 
         if score is None:
-            user_score = self.rank_to_score(user_rank)
+            user_score = self.rank_to_score(user_rank, score_rank_year)
         else:
             user_score = score
 
@@ -236,9 +247,9 @@ class SchoolMatcher:
             if sort_by == "match_score":
                 match_schools.sort(key=lambda s: abs((s.get("avg_rank") or 0) - user_rank))
 
-        self._attach_suggested_majors(reach_schools, user_rank)
-        self._attach_suggested_majors(match_schools, user_rank)
-        self._attach_suggested_majors(safety_schools, user_rank)
+        self._attach_suggested_majors(reach_schools, user_rank, selected_subjects)
+        self._attach_suggested_majors(match_schools, user_rank, selected_subjects)
+        self._attach_suggested_majors(safety_schools, user_rank, selected_subjects)
 
         # 6. 统计
         all_schools = reach_schools + match_schools + safety_schools
@@ -248,6 +259,9 @@ class SchoolMatcher:
         return {
             "user_rank": user_rank,
             "user_score": user_score,
+            "score_rank_year": score_rank_year,
+            "admission_reference_years": self.years[-3:],
+            "selected_subjects": selected_subjects or [],
             "reach": reach_schools,
             "match": match_schools,
             "safety": safety_schools,
@@ -294,6 +308,7 @@ class SchoolMatcher:
                     "major_id": record.get("major_id"),
                     "major_name": major_name,
                     "category": record.get("category"),
+                    "subject_requirement": record.get("subject_requirement"),
                     "years": {},
                 }
             majors_data[major_name]["years"][record["year"]] = {
@@ -302,6 +317,7 @@ class SchoolMatcher:
                 "avg_score": record.get("avg_score"),
                 "plan_count": record.get("plan_count"),
                 "actual_count": record.get("actual_count"),
+                "subject_requirement": record.get("subject_requirement"),
             }
 
         # 计算每个专业的趋势
@@ -558,19 +574,27 @@ class SchoolMatcher:
         schools.sort(key=lambda s: s.get(field, 0), reverse=True)
         return schools
 
-    def _attach_suggested_majors(self, schools: list, user_rank: int):
+    def _attach_suggested_majors(self, schools: list, user_rank: int, selected_subjects: list = None):
         """Add major-level suggestions to school cards."""
         for school in schools:
             school["suggested_majors"] = self._get_suggested_majors(
                 school.get("id"),
                 user_rank,
+                selected_subjects=selected_subjects,
             )
 
-    def _get_suggested_majors(self, school_id: int, user_rank: int, limit: int = 5) -> list:
+    def _get_suggested_majors(
+        self,
+        school_id: int,
+        user_rank: int,
+        limit: int = 5,
+        selected_subjects: list = None,
+    ) -> list:
         """Recommend majors in a school based on recent major admission ranks."""
         if not school_id or not user_rank:
             return []
 
+        selected_subjects = set(selected_subjects or [])
         years = self.years[-3:]
         placeholders = ",".join("?" * len(years))
         conn = get_connection()
@@ -589,7 +613,8 @@ class SchoolMatcher:
                           ar.min_score as min_score,
                           ar.min_rank as min_rank,
                           ar.avg_score as avg_score,
-                          ar.plan_count as plan_count
+                          ar.plan_count as plan_count,
+                          ar.subject_requirement as subject_requirement
                    FROM admission_records ar
                    JOIN majors m ON ar.major_id = m.id
                    LEFT JOIN real_years ry ON ry.school_id = ar.school_id AND ry.year = ar.year
@@ -611,6 +636,7 @@ class SchoolMatcher:
                     "major_id": major_id,
                     "major_name": row["major_name"],
                     "category": row["category"],
+                    "subject_requirement": row["subject_requirement"],
                     "ranks": [],
                     "scores": [],
                     "history": [],
@@ -652,11 +678,19 @@ class SchoolMatcher:
                 key=lambda item: item["year"],
                 reverse=True,
             )
+            subject_status = self._subject_fit_status(
+                data.get("subject_requirement"),
+                selected_subjects,
+            )
+            if subject_status == "blocked":
+                continue
 
             suggestions.append({
                 "major_id": data["major_id"],
                 "major_name": data["major_name"],
                 "category": data["category"],
+                "subject_requirement": data.get("subject_requirement"),
+                "subject_status": subject_status,
                 "fit_label": fit_label,
                 "probability": probability,
                 "avg_rank": avg_rank,
@@ -681,6 +715,28 @@ class SchoolMatcher:
             item.pop("_sort_score", None)
 
         return suggestions[:limit]
+
+    def _subject_fit_status(self, requirement: str, selected_subjects: set) -> str:
+        """
+        判定选科适配状态。
+
+        unknown: 暂无可靠选科要求，不过滤；
+        fit: 要求为空/不限，或用户选科满足要求；
+        blocked: 已知要求且用户选科不满足。
+        """
+        if not requirement:
+            return "unknown"
+
+        normalized = requirement.replace("，", ",").replace("、", ",").strip()
+        if normalized in ("不限", "无", "无要求"):
+            return "fit"
+
+        required = {part.strip() for part in normalized.split(",") if part.strip()}
+        if not required:
+            return "unknown"
+        if not selected_subjects:
+            return "unknown"
+        return "fit" if required.issubset(selected_subjects) else "blocked"
 
     def _calculate_major_trend(self, years_data: dict) -> dict:
         """

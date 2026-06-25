@@ -207,6 +207,12 @@ MAJORS_DATA = [
 
 # ==================== 批次线数据 ====================
 SCORE_LINES_DATA = {
+    2026: [
+        ("普通类一段", 442, 355637),
+        ("普通类二段", 150, 708817),
+        ("特殊类型招生控制线", 525, 146675),
+        ("3+2对口贯通分段培养高职志愿填报资格线", 392, None),
+    ],
     2023: [
         ("普通类一段", 443, 308701),
         ("普通类二段", 150, 662199),
@@ -370,11 +376,12 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
                     "admission_records",
                     "score_lines",
                     "ranking_table",
+                    "subject_ranking_table",
                     "schools",
                     "majors",
                 ]:
                     conn.execute(f"DELETE FROM {table}")
-                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('admission_records', 'score_lines', 'ranking_table', 'schools', 'majors')")
+                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('admission_records', 'score_lines', 'ranking_table', 'subject_ranking_table', 'schools', 'majors')")
                 conn.commit()
             finally:
                 conn.close()

@@ -40,6 +40,7 @@ const DOM = {
     statSafety:  $('statSafety'),
     statBatchLine:  $('statBatchLine'),
     statSpecialLine: $('statSpecialLine'),
+    dataNotice:      $('dataNotice'),
     // tab counts
     tabReachCount:  $('tabReachCount'),
     tabMatchCount:  $('tabMatchCount'),
@@ -86,6 +87,7 @@ function fetchRecommendations(params) {
     if (params.rank)       qs.set('rank', params.rank);
     if (params.school_type) qs.set('school_type', params.school_type);
     if (params.province)   qs.set('province', params.province);
+    if (params.selected_subjects) qs.set('selected_subjects', params.selected_subjects);
     if (params.sort_by)    qs.set('sort_by', params.sort_by);
     return apiFetch('/recommend?' + qs.toString());
 }
@@ -135,6 +137,10 @@ function getSchoolTypeFilter() {
 function getProvinceFilter() {
     const el = document.querySelector('input[name="province"]:checked');
     return el ? el.value : '';
+}
+
+function getSelectedSubjects() {
+    return [...$$('input[name="subject"]:checked')].map(el => el.value).filter(Boolean);
 }
 
 function scheduleInputConversion(source) {
@@ -201,6 +207,20 @@ function setupSchoolTypeCheckboxes() {
     });
 }
 
+function setupSubjectCheckboxes() {
+    $$('input[name="subject"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const checked = getSelectedSubjects();
+            if (checked.length > 3) {
+                cb.checked = false;
+                showError('山东普通类选考科目最多选择3门');
+                return;
+            }
+            if (currentData) doSearch();
+        });
+    });
+}
+
 // ============ 类型标签 ============
 function typeTag(type) {
     if (!type) return '';
@@ -249,6 +269,9 @@ function renderSuggestedMajors(majors) {
         const probPct = asPercent(m.probability);
         const fit = m.fit_label || '参考';
         const fitClass = fit === '稳' ? 'stable' : (fit === '可冲' || fit === '风险高' ? 'reach' : 'match');
+        const subjectBadge = m.subject_requirement && m.subject_status === 'fit'
+            ? '<span class="major-fit stable">选科可报</span>'
+            : '';
         const scoreText = m.latest_score ? `${m.latest_score}分` : (m.avg_score ? `均${m.avg_score}分` : '-');
         const rankText = m.latest_rank ? `${Number(m.latest_rank).toLocaleString()}位` : (m.avg_rank ? `均${Number(m.avg_rank).toLocaleString()}位` : '-');
 
@@ -257,6 +280,7 @@ function renderSuggestedMajors(majors) {
             <div class="major-suggestion-main">
                 <span class="major-suggestion-name">${escapeHtml(m.major_name)}</span>
                 <span class="major-fit ${fitClass}">${escapeHtml(fit)}</span>
+                ${subjectBadge}
             </div>
             <div class="major-suggestion-meta">
                 <span>${scoreText}</span>
@@ -292,6 +316,15 @@ function renderStatistics(data) {
     // 更新输入框反向值
     if (user_input.score && !DOM.scoreInput.value) DOM.scoreInput.value = user_input.score;
     if (user_input.rank && !DOM.rankInput.value) DOM.rankInput.value = user_input.rank;
+
+    const scoreRankYear = user_input.score_rank_year || 2026;
+    const refYears = user_input.admission_reference_years || [];
+    const selectedSubjects = user_input.selected_subjects || [];
+    const subjectsText = selectedSubjects.length ? `；选科：${selectedSubjects.join('、')}` : '';
+    if (DOM.dataNotice) {
+        DOM.dataNotice.textContent = data.data_notice ||
+            `分数/位次按${scoreRankYear}山东官方一分一段表换算；院校和专业录取概率参考${refYears.join('-')}历史录取位次${subjectsText}。`;
+    }
 }
 
 // ============ Render: Score Lines in Stats ============
@@ -463,6 +496,7 @@ function renderMajorList(majors, container) {
             <div class="major-top">
                 <span class="major-name">${m.major_name}</span>
                 <span class="major-category">${m.category || ''}</span>
+                ${m.subject_requirement ? `<span class="major-category">选科 ${escapeHtml(m.subject_requirement)}</span>` : ''}
                 ${trendTag(m.hot_trend)}
             </div>
             <div class="major-history">${historyHtml || '<span>暂无历史数据</span>'}</div>
@@ -521,6 +555,9 @@ async function doSearch() {
     const province = getProvinceFilter();
     if (province) params.province = province;
 
+    const subjects = getSelectedSubjects();
+    if (subjects.length) params.selected_subjects = subjects.join(',');
+
     params.sort_by = DOM.sortBy.value;
 
     try {
@@ -575,6 +612,7 @@ async function doSearch() {
 function init() {
     setupTabs();
     setupSchoolTypeCheckboxes();
+    setupSubjectCheckboxes();
     setResultsMode(false);
 
     // 搜索

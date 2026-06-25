@@ -48,6 +48,7 @@ UNIQUE_INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_majors_name ON majors(name);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_score_lines_year_batch ON score_lines(year, batch);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_ranking_year_score ON ranking_table(year, score);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
     """CREATE UNIQUE INDEX IF NOT EXISTS uq_admission_record_identity
        ON admission_records(year, school_id, major_id, IFNULL(batch, ''));""",
 ]
@@ -62,6 +63,10 @@ def _ensure_schema_migrations(conn: sqlite3.Connection):
     if "data_source" not in admission_columns:
         conn.execute(
             "ALTER TABLE admission_records ADD COLUMN data_source TEXT DEFAULT 'seed'"
+        )
+    if "subject_requirement" not in admission_columns:
+        conn.execute(
+            "ALTER TABLE admission_records ADD COLUMN subject_requirement TEXT"
         )
     conn.commit()
 
@@ -247,7 +252,8 @@ def insert_admission_record(year: int, school_id: int, major_id: int,
                             batch: str = None, min_score: int = None,
                             min_rank: int = None, avg_score: int = None,
                             plan_count: int = None, actual_count: int = None,
-                            data_source: str = "seed") -> int:
+                            data_source: str = "seed",
+                            subject_requirement: str = None) -> int:
     """
     插入录取记录
     
@@ -269,18 +275,19 @@ def insert_admission_record(year: int, school_id: int, major_id: int,
                        avg_score = COALESCE(?, avg_score),
                        plan_count = COALESCE(?, plan_count),
                        actual_count = COALESCE(?, actual_count),
+                       subject_requirement = COALESCE(?, subject_requirement),
                        data_source = COALESCE(?, data_source)
                    WHERE id = ?""",
-                (min_score, min_rank, avg_score, plan_count, actual_count, data_source, row["id"])
+                (min_score, min_rank, avg_score, plan_count, actual_count, subject_requirement, data_source, row["id"])
             )
             conn.commit()
             return row["id"]
 
         cursor = conn.execute(
             """INSERT INTO admission_records
-               (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, data_source)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, data_source)
+               (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, subject_requirement, data_source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count, subject_requirement, data_source)
         )
         conn.commit()
         return cursor.lastrowid
@@ -347,6 +354,44 @@ def insert_ranking(year: int, score: int, same_score_count: int = None,
         cursor = conn.execute(
             "INSERT INTO ranking_table (year, score, same_score_count, cumulative_count) VALUES (?, ?, ?, ?)",
             (year, score, same_score_count, cumulative_count)
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def insert_subject_ranking(year: int, subject: str, score: int,
+                           same_score_count: int = None,
+                           cumulative_count: int = None) -> int:
+    """
+    插入选科一分一段记录。
+
+    注意：该表只用于展示/后续选科分析，不用于当前院校录取概率匹配。
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """SELECT id FROM subject_ranking_table
+               WHERE year = ? AND subject = ? AND score = ?""",
+            (year, subject, score)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE subject_ranking_table
+                   SET same_score_count = COALESCE(?, same_score_count),
+                       cumulative_count = COALESCE(?, cumulative_count)
+                   WHERE id = ?""",
+                (same_score_count, cumulative_count, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
+        cursor = conn.execute(
+            """INSERT INTO subject_ranking_table
+               (year, subject, score, same_score_count, cumulative_count)
+               VALUES (?, ?, ?, ?, ?)""",
+            (year, subject, score, same_score_count, cumulative_count)
         )
         conn.commit()
         return cursor.lastrowid
@@ -547,6 +592,27 @@ def bulk_insert_rankings(rankings: List[Dict[str, Any]]) -> int:
                ON CONFLICT(year, score) DO UPDATE SET
                    same_score_count = COALESCE(excluded.same_score_count, ranking_table.same_score_count),
                    cumulative_count = COALESCE(excluded.cumulative_count, ranking_table.cumulative_count)""",
+            rankings
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def bulk_insert_subject_rankings(rankings: List[Dict[str, Any]]) -> int:
+    """
+    批量插入选科一分一段表数据。
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.executemany(
+            """INSERT INTO subject_ranking_table
+               (year, subject, score, same_score_count, cumulative_count)
+               VALUES (:year, :subject, :score, :same_score_count, :cumulative_count)
+               ON CONFLICT(year, subject, score) DO UPDATE SET
+                   same_score_count = COALESCE(excluded.same_score_count, subject_ranking_table.same_score_count),
+                   cumulative_count = COALESCE(excluded.cumulative_count, subject_ranking_table.cumulative_count)""",
             rankings
         )
         conn.commit()

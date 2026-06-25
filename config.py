@@ -41,6 +41,10 @@ API_CONFIG = {
 
 # ==================== 推荐算法配置 ====================
 ALGORITHM_CONFIG = {
+    # 当前考生分数/位次口径。2026 只用于分数位次互转，不代表已有 2026 院校录取线。
+    "score_rank_year": int(os.getenv("SCORE_RANK_YEAR", "2026")),
+    # 院校/专业录取匹配仍使用已经公布的历史录取数据。
+    "admission_reference_years": [2023, 2024, 2025],
     # 冲稳保比例
     "rush_ratio": 0.3,      # 冲一冲
     "stable_ratio": 0.4,    # 稳一稳
@@ -57,6 +61,7 @@ ALGORITHM_CONFIG = {
 SHANDONG_CONFIG = {
     "province": "山东",
     "exam_type": "新高考",  # 3+3模式
+    "subjects": ["物理", "化学", "生物", "思想政治", "历史", "地理"],
     "total_score": 750,
     "batches": ["普通类一段", "普通类二段", "艺术类", "体育类"],
 }

@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scraper.base import BaseScraper
 from database.db import (
     get_connection, init_db,
-    insert_score_line, insert_ranking, bulk_insert_rankings
+    insert_score_line, insert_ranking, bulk_insert_rankings,
+    insert_subject_ranking, bulk_insert_subject_rankings,
 )
 
 
@@ -28,16 +29,32 @@ class ShandongEduScraper(BaseScraper):
     
     BASE_URL = "https://www.sdzk.cn"
     
-    # 已知的新闻页面ID（包含分数线/一分一段表数据）
+    # 已知的新闻页面ID（包含分数线/一分一段表数据）。
+    # 2026 使用官方附件直链，避免新发布页面 ID 变动导致年份误配。
     NEWS_IDS = {
-        2025: {"score_line": "7256", "ranking": "7257"},
         2024: {"score_line": "7102", "ranking": "7103"},
         2023: {"score_line": "6943", "ranking": "6944"},
+    }
+
+    OFFICIAL_FILES = {
+        2026: {
+            "score_lines_source": "https://www.sdzk.cn/Floadup/file/20260625/6391799576812677817426225.pdf",
+            "ranking_xls": "https://www.sdzk.cn/Floadup/file/20260625/6391799529165570082629463.xls",
+        }
+    }
+
+    SUBJECT_COLUMNS = {
+        "物理": (3, 4),
+        "化学": (5, 6),
+        "生物": (7, 8),
+        "思想政治": (9, 10),
+        "历史": (11, 12),
+        "地理": (13, 14),
     }
     
     def __init__(self, db_path: str = None):
         super().__init__(db_path)
-        self.years = [2023, 2024, 2025]
+        self.years = [2023, 2024, 2025, 2026]
     
     def fetch_score_lines(self, year: int) -> List[Dict[str, Any]]:
         """
@@ -55,6 +72,9 @@ class ShandongEduScraper(BaseScraper):
             批次线列表
         """
         news_id = self.NEWS_IDS.get(year, {}).get("score_line")
+        if year in self.OFFICIAL_FILES:
+            return self._get_official_score_lines(year)
+
         if not news_id:
             print(f"[山东考试院] {year}年批次线页面ID未知")
             return self._get_fallback_score_lines(year)
@@ -103,6 +123,12 @@ class ShandongEduScraper(BaseScraper):
     def _get_fallback_score_lines(self, year: int) -> List[Dict[str, Any]]:
         """批次线备用数据（基于真实数据）"""
         fallback = {
+            2026: [
+                {"year": 2026, "batch": "普通类一段", "score": 442, "rank": 355637},
+                {"year": 2026, "batch": "普通类二段", "score": 150, "rank": 708817},
+                {"year": 2026, "batch": "特殊类型招生控制线", "score": 525, "rank": 146675},
+                {"year": 2026, "batch": "3+2对口贯通分段培养高职志愿填报资格线", "score": 392, "rank": None},
+            ],
             2023: [
                 {"year": 2023, "batch": "普通类一段", "score": 443, "rank": 308701},
                 {"year": 2023, "batch": "普通类二段", "score": 150, "rank": 662199},
@@ -120,6 +146,12 @@ class ShandongEduScraper(BaseScraper):
             ],
         }
         return fallback.get(year, [])
+
+    def _get_official_score_lines(self, year: int) -> List[Dict[str, Any]]:
+        """Return verified official score lines for newly published years."""
+        if year == 2026:
+            return self._get_fallback_score_lines(2026)
+        return []
     
     def fetch_ranking_table(self, year: int) -> List[Dict[str, Any]]:
         """
@@ -135,6 +167,12 @@ class ShandongEduScraper(BaseScraper):
             一分一段表数据列表
         """
         news_id = self.NEWS_IDS.get(year, {}).get("ranking")
+        official_xls = self.OFFICIAL_FILES.get(year, {}).get("ranking_xls")
+        if official_xls:
+            rankings = self._download_and_parse_xls(official_xls, year)
+            if rankings:
+                return rankings
+
         if not news_id:
             print(f"[山东考试院] {year}年一分一段表页面ID未知")
             return self._generate_ranking_table(year)
@@ -150,6 +188,13 @@ class ShandongEduScraper(BaseScraper):
         
         print(f"[山东考试院] {year}年一分一段表在线获取失败，使用模拟数据")
         return self._generate_ranking_table(year)
+
+    def fetch_subject_ranking_table(self, year: int) -> List[Dict[str, Any]]:
+        """获取某年的选科一分一段表。当前只对 2026 官方 XLS 启用。"""
+        official_xls = self.OFFICIAL_FILES.get(year, {}).get("ranking_xls")
+        if not official_xls:
+            return []
+        return self._download_and_parse_xls(official_xls, year, subject_rankings=True)
     
     def _parse_ranking_page(self, html: str, year: int) -> List[Dict[str, Any]]:
         """尝试从页面解析一分一段表数据或下载链接"""
@@ -192,13 +237,23 @@ class ShandongEduScraper(BaseScraper):
         
         return rankings
     
-    def _download_and_parse_xls(self, url: str, year: int) -> List[Dict[str, Any]]:
+    def _download_and_parse_xls(
+        self,
+        url: str,
+        year: int,
+        subject_rankings: bool = False,
+    ) -> List[Dict[str, Any]]:
         """下载并解析XLS文件"""
         try:
             import pandas as pd
             
             self._rate_limit()
-            response = self.session.get(url, headers=self._get_headers_dict(), timeout=30)
+            response = self.session.get(
+                url,
+                headers=self._get_headers_dict(),
+                timeout=30,
+                verify=False,
+            )
             
             if response.status_code == 200:
                 # 保存临时文件
@@ -209,46 +264,10 @@ class ShandongEduScraper(BaseScraper):
                     temp_path = f.name
                 
                 try:
-                    df = pd.read_excel(temp_path)
-                    rankings = []
-                    
-                    # 尝试识别列名
-                    cols = df.columns.tolist()
-                    score_col = None
-                    same_col = None
-                    cumulative_col = None
-                    
-                    for col in cols:
-                        col_str = str(col)
-                        if "分数" in col_str or "成绩" in col_str:
-                            score_col = col
-                        elif "同分" in col_str or "本段" in col_str:
-                            same_col = col
-                        elif "累计" in col_str or "位次" in col_str:
-                            cumulative_col = col
-                    
-                    # 如果没找到对应列名，用位置
-                    if score_col is None and len(cols) >= 3:
-                        score_col, same_col, cumulative_col = cols[0], cols[1], cols[2]
-                    
-                    if score_col:
-                        for _, row in df.iterrows():
-                            try:
-                                score = int(row[score_col])
-                                same_count = int(row[same_col]) if same_col else 0
-                                cumulative = int(row[cumulative_col]) if cumulative_col else 0
-                                
-                                if 100 <= score <= 750:
-                                    rankings.append({
-                                        "year": year,
-                                        "score": score,
-                                        "same_score_count": same_count,
-                                        "cumulative_count": cumulative,
-                                    })
-                            except (ValueError, TypeError):
-                                continue
-                    
-                    return rankings
+                    df = pd.read_excel(temp_path, header=None)
+                    if subject_rankings:
+                        return self._parse_subject_ranking_dataframe(df, year)
+                    return self._parse_ranking_dataframe(df, year)
                 finally:
                     os.unlink(temp_path)
         except ImportError:
@@ -257,6 +276,74 @@ class ShandongEduScraper(BaseScraper):
             print(f"[山东考试院] XLS解析失败: {e}")
         
         return []
+
+    def parse_ranking_xls_file(
+        self,
+        path: str,
+        year: int,
+        subject_rankings: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """解析本地官方 XLS 文件，便于人工下载后导入/核验。"""
+        import pandas as pd
+
+        df = pd.read_excel(path, header=None)
+        if subject_rankings:
+            return self._parse_subject_ranking_dataframe(df, year)
+        return self._parse_ranking_dataframe(df, year)
+
+    def _parse_ranking_dataframe(self, df, year: int) -> List[Dict[str, Any]]:
+        """解析普通类全体一分一段表。"""
+        rankings = []
+        for _, row in df.iterrows():
+            try:
+                score = int(float(row.iloc[0]))
+                same_count = int(float(row.iloc[1]))
+                cumulative = int(float(row.iloc[2]))
+            except (ValueError, TypeError, IndexError):
+                continue
+
+            if 100 <= score <= 750:
+                rankings.append({
+                    "year": year,
+                    "score": score,
+                    "same_score_count": same_count,
+                    "cumulative_count": cumulative,
+                })
+
+        return rankings
+
+    def _parse_subject_ranking_dataframe(self, df, year: int) -> List[Dict[str, Any]]:
+        """解析官方 XLS 中各选考科目的一分一段表。"""
+        subject_rows = []
+        for _, row in df.iterrows():
+            try:
+                score = int(float(row.iloc[0]))
+            except (ValueError, TypeError, IndexError):
+                continue
+
+            if not 100 <= score <= 750:
+                continue
+
+            for subject, (same_col, cumulative_col) in self.SUBJECT_COLUMNS.items():
+                try:
+                    same_raw = row.iloc[same_col]
+                    cumulative_raw = row.iloc[cumulative_col]
+                    if same_raw != same_raw or cumulative_raw != cumulative_raw:
+                        continue
+                    same_count = int(float(same_raw))
+                    cumulative = int(float(cumulative_raw))
+                except (ValueError, TypeError, IndexError):
+                    continue
+
+                subject_rows.append({
+                    "year": year,
+                    "subject": subject,
+                    "score": score,
+                    "same_score_count": same_count,
+                    "cumulative_count": cumulative,
+                })
+
+        return subject_rows
     
     def _get_headers_dict(self) -> Dict[str, str]:
         """获取请求头（兼容方法）"""
@@ -313,6 +400,7 @@ class ShandongEduScraper(BaseScraper):
         all_data = {
             "score_lines": [],
             "rankings": [],
+            "subject_rankings": [],
         }
         
         for year in self.years:
@@ -325,6 +413,9 @@ class ShandongEduScraper(BaseScraper):
             print(f"[山东考试院] 获取 {year} 年一分一段表...")
             rankings = self.fetch_ranking_table(year)
             all_data["rankings"].extend(rankings)
+
+            subject_rankings = self.fetch_subject_ranking_table(year)
+            all_data["subject_rankings"].extend(subject_rankings)
         
         # 合并返回
         return [all_data]  # 包装为list以符合基类接口
@@ -375,6 +466,25 @@ class ShandongEduScraper(BaseScraper):
                 print(f"[山东考试院] 已保存 {saved} 条一分一段记录")
             else:
                 print(f"[山东考试院] 已批量保存 {len(rankings)} 条一分一段记录")
+
+        subject_rankings = all_data.get("subject_rankings", [])
+        if subject_rankings:
+            try:
+                bulk_insert_subject_rankings(subject_rankings)
+            except Exception:
+                saved = 0
+                for r in subject_rankings:
+                    try:
+                        insert_subject_ranking(
+                            r["year"], r["subject"], r["score"],
+                            r["same_score_count"], r["cumulative_count"]
+                        )
+                        saved += 1
+                    except Exception:
+                        pass
+                print(f"[山东考试院] 已保存 {saved} 条选科一分一段记录")
+            else:
+                print(f"[山东考试院] 已批量保存 {len(subject_rankings)} 条选科一分一段记录")
     
     def run(self, years: List[int] = None):
         """
@@ -404,5 +514,5 @@ class ShandongEduScraper(BaseScraper):
 
 if __name__ == "__main__":
     scraper = ShandongEduScraper()
-    scraper.run()
-
+    cli_years = [int(arg) for arg in sys.argv[1:] if arg.isdigit()]
+    scraper.run(cli_years or None)
