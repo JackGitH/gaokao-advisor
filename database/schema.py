@@ -93,7 +93,6 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_admission_school ON admission_records(school_id);",
     "CREATE INDEX IF NOT EXISTS idx_admission_major ON admission_records(major_id);",
     "CREATE INDEX IF NOT EXISTS idx_admission_rank ON admission_records(min_rank);",
-    "CREATE INDEX IF NOT EXISTS idx_admission_subject_requirement ON admission_records(subject_requirement);",
     "CREATE INDEX IF NOT EXISTS idx_ranking_year_score ON ranking_table(year, score);",
     "CREATE INDEX IF NOT EXISTS idx_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
     "CREATE INDEX IF NOT EXISTS idx_score_lines_year ON score_lines(year, batch);",

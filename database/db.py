@@ -51,6 +51,7 @@ UNIQUE_INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_subject_ranking_year_subject_score ON subject_ranking_table(year, subject, score);",
     """CREATE UNIQUE INDEX IF NOT EXISTS uq_admission_record_identity
        ON admission_records(year, school_id, major_id, IFNULL(batch, ''));""",
+    "CREATE INDEX IF NOT EXISTS idx_admission_subject_requirement ON admission_records(subject_requirement);",
 ]
 
 
