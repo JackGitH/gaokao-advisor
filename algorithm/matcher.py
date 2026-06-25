@@ -164,7 +164,7 @@ class SchoolMatcher:
     # ==================== 主匹配方法 ====================
 
     def match(self, score: int = None, rank: int = None,
-              filters: dict = None) -> dict:
+              filters: dict = None, sort_by: str = "match_score") -> dict:
         """
         主匹配方法
 
@@ -216,9 +216,9 @@ class SchoolMatcher:
             safety_schools = self._apply_filters(safety_schools, filters)
 
         # 5. 使用 ranker 排序
-        reach_schools = self.ranker.rank_schools(reach_schools, user_rank, sort_by="match_score")
-        match_schools = self.ranker.rank_schools(match_schools, user_rank, sort_by="match_score")
-        safety_schools = self.ranker.rank_schools(safety_schools, user_rank, sort_by="match_score")
+        reach_schools = self.ranker.rank_schools(reach_schools, user_rank, sort_by=sort_by)
+        match_schools = self.ranker.rank_schools(match_schools, user_rank, sort_by=sort_by)
+        safety_schools = self.ranker.rank_schools(safety_schools, user_rank, sort_by=sort_by)
 
         # 6. 统计
         all_schools = reach_schools + match_schools + safety_schools
@@ -340,10 +340,15 @@ class SchoolMatcher:
                         "min_ranks": [],
                         "min_scores": [],
                         "years_matched": [],
+                        "major_categories": set(),
                     }
                 schools_map[sid]["min_ranks"].append(school.get("min_rank"))
                 schools_map[sid]["min_scores"].append(school.get("min_score"))
-                schools_map[sid]["years_matched"].append(year)
+                schools_map[sid]["years_matched"].append(school.get("year", year))
+                categories = school.get("major_categories") or ""
+                schools_map[sid]["major_categories"].update(
+                    c for c in categories.split(",") if c
+                )
 
         # 计算统计值
         result = []
@@ -365,6 +370,7 @@ class SchoolMatcher:
                 data["avg_score"] = 0
 
             data["data_years"] = len(data["years_matched"])
+            data["major_categories"] = sorted(data["major_categories"])
             result.append(data)
 
         return result
@@ -402,6 +408,14 @@ class SchoolMatcher:
         if batch:
             # 批次信息在录取记录中，这里简单跳过，后续可扩展
             pass
+
+        # 专业门类筛选
+        major_category = filters.get("major_category")
+        if major_category:
+            filtered = [
+                s for s in filtered
+                if major_category in (s.get("major_categories") or [])
+            ]
 
         return filtered
 

@@ -31,9 +31,9 @@ SCRAPER_CONFIG = {
 
 # ==================== API 配置 ====================
 API_CONFIG = {
-    "host": "0.0.0.0",
-    "port": 8000,
-    "debug": True,
+    "host": os.getenv("HOST", "0.0.0.0"),
+    "port": int(os.getenv("PORT", "8000")),
+    "debug": os.getenv("DEBUG", "false").lower() == "true",
     "title": "高考志愿推荐系统",
     "description": "基于历年录取数据的智能志愿推荐API",
     "version": "1.0.0",

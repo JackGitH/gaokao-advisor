@@ -325,6 +325,22 @@ def generate_seed_data(save_to_db: bool = True, save_json: bool = True, force: b
         init_db()
         
         # 检查是否已有数据
+        if force:
+            conn = get_connection()
+            try:
+                for table in [
+                    "admission_records",
+                    "score_lines",
+                    "ranking_table",
+                    "schools",
+                    "majors",
+                ]:
+                    conn.execute(f"DELETE FROM {table}")
+                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('admission_records', 'score_lines', 'ranking_table', 'schools', 'majors')")
+                conn.commit()
+            finally:
+                conn.close()
+
         if not force:
             conn = get_connection()
             count = conn.execute("SELECT COUNT(*) FROM schools").fetchone()[0]

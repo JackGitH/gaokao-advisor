@@ -35,8 +35,98 @@ def init_db():
     conn = get_connection()
     try:
         _init_schema(conn)
+        _deduplicate_existing_data(conn)
+        _ensure_unique_indexes(conn)
     finally:
         conn.close()
+
+
+UNIQUE_INDEXES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_schools_name ON schools(name);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_majors_name ON majors(name);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_score_lines_year_batch ON score_lines(year, batch);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_ranking_year_score ON ranking_table(year, score);",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_admission_record_identity
+       ON admission_records(year, school_id, major_id, IFNULL(batch, ''));""",
+]
+
+
+def _canonical_id_map(conn: sqlite3.Connection, table: str) -> Dict[int, int]:
+    """Build duplicate id -> canonical id mapping by name."""
+    rows = conn.execute(
+        f"""SELECT name, MIN(id) as keep_id, GROUP_CONCAT(id) as ids
+            FROM {table}
+            GROUP BY name
+            HAVING COUNT(*) > 1"""
+    ).fetchall()
+
+    mapping = {}
+    for row in rows:
+        keep_id = row["keep_id"]
+        for raw_id in row["ids"].split(","):
+            duplicate_id = int(raw_id)
+            if duplicate_id != keep_id:
+                mapping[duplicate_id] = keep_id
+    return mapping
+
+
+def _deduplicate_existing_data(conn: sqlite3.Connection):
+    """Merge old duplicate seed/import rows before unique indexes are created."""
+    school_map = _canonical_id_map(conn, "schools")
+    for old_id, keep_id in school_map.items():
+        conn.execute(
+            "UPDATE admission_records SET school_id = ? WHERE school_id = ?",
+            (keep_id, old_id),
+        )
+    if school_map:
+        conn.executemany(
+            "DELETE FROM schools WHERE id = ?",
+            [(old_id,) for old_id in school_map.keys()],
+        )
+
+    major_map = _canonical_id_map(conn, "majors")
+    for old_id, keep_id in major_map.items():
+        conn.execute(
+            "UPDATE admission_records SET major_id = ? WHERE major_id = ?",
+            (keep_id, old_id),
+        )
+    if major_map:
+        conn.executemany(
+            "DELETE FROM majors WHERE id = ?",
+            [(old_id,) for old_id in major_map.keys()],
+        )
+
+    conn.execute(
+        """DELETE FROM admission_records
+           WHERE id NOT IN (
+               SELECT MIN(id)
+               FROM admission_records
+               GROUP BY year, school_id, major_id, IFNULL(batch, '')
+           )"""
+    )
+    conn.execute(
+        """DELETE FROM score_lines
+           WHERE id NOT IN (
+               SELECT MAX(id)
+               FROM score_lines
+               GROUP BY year, batch
+           )"""
+    )
+    conn.execute(
+        """DELETE FROM ranking_table
+           WHERE id NOT IN (
+               SELECT MAX(id)
+               FROM ranking_table
+               GROUP BY year, score
+           )"""
+    )
+    conn.commit()
+
+
+def _ensure_unique_indexes(conn: sqlite3.Connection):
+    for index_sql in UNIQUE_INDEXES:
+        conn.execute(index_sql)
+    conn.commit()
 
 
 # ==================== 学校相关操作 ====================
@@ -51,6 +141,24 @@ def insert_school(name: str, province: str = None, city: str = None,
     """
     conn = get_connection()
     try:
+        row = conn.execute(
+            "SELECT id FROM schools WHERE name = ?",
+            (name,)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE schools
+                   SET province = COALESCE(?, province),
+                       city = COALESCE(?, city),
+                       type = COALESCE(?, type),
+                       level = COALESCE(?, level),
+                       features = COALESCE(?, features)
+                   WHERE id = ?""",
+                (province, city, type_, level, features, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
         cursor = conn.execute(
             "INSERT INTO schools (name, province, city, type, level, features) VALUES (?, ?, ?, ?, ?, ?)",
             (name, province, city, type_, level, features)
@@ -70,6 +178,21 @@ def insert_major(name: str, category: str = None, hot_trend: str = None) -> int:
     """
     conn = get_connection()
     try:
+        row = conn.execute(
+            "SELECT id FROM majors WHERE name = ?",
+            (name,)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE majors
+                   SET category = COALESCE(?, category),
+                       hot_trend = COALESCE(?, hot_trend)
+                   WHERE id = ?""",
+                (category, hot_trend, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
         cursor = conn.execute(
             "INSERT INTO majors (name, category, hot_trend) VALUES (?, ?, ?)",
             (name, category, hot_trend)
@@ -92,6 +215,25 @@ def insert_admission_record(year: int, school_id: int, major_id: int,
     """
     conn = get_connection()
     try:
+        row = conn.execute(
+            """SELECT id FROM admission_records
+               WHERE year = ? AND school_id = ? AND major_id = ? AND IFNULL(batch, '') = IFNULL(?, '')""",
+            (year, school_id, major_id, batch)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE admission_records
+                   SET min_score = COALESCE(?, min_score),
+                       min_rank = COALESCE(?, min_rank),
+                       avg_score = COALESCE(?, avg_score),
+                       plan_count = COALESCE(?, plan_count),
+                       actual_count = COALESCE(?, actual_count)
+                   WHERE id = ?""",
+                (min_score, min_rank, avg_score, plan_count, actual_count, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
         cursor = conn.execute(
             """INSERT INTO admission_records 
                (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count, actual_count) 
@@ -113,6 +255,18 @@ def insert_score_line(year: int, batch: str, score: int, rank: int = None) -> in
     """
     conn = get_connection()
     try:
+        row = conn.execute(
+            "SELECT id FROM score_lines WHERE year = ? AND batch = ?",
+            (year, batch)
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE score_lines SET score = ?, rank = ? WHERE id = ?",
+                (score, rank, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
         cursor = conn.execute(
             "INSERT INTO score_lines (year, batch, score, rank) VALUES (?, ?, ?, ?)",
             (year, batch, score, rank)
@@ -133,6 +287,21 @@ def insert_ranking(year: int, score: int, same_score_count: int = None,
     """
     conn = get_connection()
     try:
+        row = conn.execute(
+            "SELECT id FROM ranking_table WHERE year = ? AND score = ?",
+            (year, score)
+        ).fetchone()
+        if row:
+            conn.execute(
+                """UPDATE ranking_table
+                   SET same_score_count = COALESCE(?, same_score_count),
+                       cumulative_count = COALESCE(?, cumulative_count)
+                   WHERE id = ?""",
+                (same_score_count, cumulative_count, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
         cursor = conn.execute(
             "INSERT INTO ranking_table (year, score, same_score_count, cumulative_count) VALUES (?, ?, ?, ?)",
             (year, score, same_score_count, cumulative_count)
@@ -160,12 +329,19 @@ def query_schools_by_rank_range(min_rank: int, max_rank: int, year: int) -> List
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT DISTINCT s.*, ar.min_rank, ar.min_score
+            """SELECT s.*,
+                      ? as year,
+                      CAST(AVG(ar.min_rank) AS INTEGER) as min_rank,
+                      CAST(AVG(ar.min_score) AS INTEGER) as min_score,
+                      GROUP_CONCAT(DISTINCT m.category) as major_categories,
+                      COUNT(*) as matched_record_count
                FROM schools s
                JOIN admission_records ar ON s.id = ar.school_id
+               JOIN majors m ON ar.major_id = m.id
                WHERE ar.year = ? AND ar.min_rank BETWEEN ? AND ?
-               ORDER BY ar.min_rank ASC""",
-            (year, min_rank, max_rank)
+               GROUP BY s.id
+               ORDER BY min_rank ASC""",
+            (year, year, min_rank, max_rank)
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -268,7 +444,15 @@ def bulk_insert_schools(schools: List[Dict[str, Any]]) -> int:
     conn = get_connection()
     try:
         cursor = conn.executemany(
-            "INSERT INTO schools (name, province, city, type, level, features) VALUES (:name, :province, :city, :type, :level, :features)",
+            """INSERT INTO schools
+               (name, province, city, type, level, features)
+               VALUES (:name, :province, :city, :type, :level, :features)
+               ON CONFLICT(name) DO UPDATE SET
+                   province = COALESCE(excluded.province, schools.province),
+                   city = COALESCE(excluded.city, schools.city),
+                   type = COALESCE(excluded.type, schools.type),
+                   level = COALESCE(excluded.level, schools.level),
+                   features = COALESCE(excluded.features, schools.features)""",
             schools
         )
         conn.commit()
@@ -290,7 +474,12 @@ def bulk_insert_rankings(rankings: List[Dict[str, Any]]) -> int:
     conn = get_connection()
     try:
         cursor = conn.executemany(
-            "INSERT INTO ranking_table (year, score, same_score_count, cumulative_count) VALUES (:year, :score, :same_score_count, :cumulative_count)",
+            """INSERT INTO ranking_table
+               (year, score, same_score_count, cumulative_count)
+               VALUES (:year, :score, :same_score_count, :cumulative_count)
+               ON CONFLICT(year, score) DO UPDATE SET
+                   same_score_count = COALESCE(excluded.same_score_count, ranking_table.same_score_count),
+                   cumulative_count = COALESCE(excluded.cumulative_count, ranking_table.cumulative_count)""",
             rankings
         )
         conn.commit()

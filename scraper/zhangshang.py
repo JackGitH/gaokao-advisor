@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scraper.base import BaseScraper
 from database.db import (
-    get_connection, init_db,
+    init_db,
     insert_school, insert_major, insert_admission_record
 )
 
@@ -142,6 +142,32 @@ class ZhangshangScraper(BaseScraper):
             return data.get("data", data)
         
         return None
+
+    def _extract_school_meta(self, info: Any) -> Dict[str, Any]:
+        """Extract school metadata from gaokao.cn/EOL school list rows."""
+        if not isinstance(info, dict):
+            return {}
+
+        features = []
+        if str(info.get("f985", info.get("is_985", ""))) in ("1", "True", "true"):
+            school_type = "985"
+            features.append("985")
+        elif str(info.get("f211", info.get("is_211", ""))) in ("1", "True", "true"):
+            school_type = "211"
+            features.append("211")
+        elif str(info.get("is_dual_class", info.get("dual_class", ""))) in ("1", "True", "true"):
+            school_type = "双一流"
+            features.append("双一流")
+        else:
+            school_type = info.get("school_level")
+
+        return {
+            "province": info.get("province_name") or info.get("province"),
+            "city": info.get("city_name") or info.get("city"),
+            "type": school_type,
+            "level": info.get("level_name") or info.get("level"),
+            "features": ",".join(features) if features else None,
+        }
     
     def scrape(self) -> List[Dict[str, Any]]:
         """
@@ -167,6 +193,7 @@ class ZhangshangScraper(BaseScraper):
         
         for school_id, info in list(school_data.items())[:max_schools]:
             school_name = info.get("name", "") if isinstance(info, dict) else str(info)
+            school_meta = self._extract_school_meta(info)
             
             if not school_name or school_name in ("code", "message", "msg"):
                 continue
@@ -177,6 +204,8 @@ class ZhangshangScraper(BaseScraper):
                 
                 if score_data:
                     records = self._parse_score_data(school_name, score_data, year)
+                    for record in records:
+                        record.update(school_meta)
                     all_records.extend(records)
                     got_data = True
             
@@ -238,72 +267,47 @@ class ZhangshangScraper(BaseScraper):
         保存爬取数据到数据库
         """
         init_db()
-        conn = get_connection()
-        
+
         # 缓存已存在的学校和专业ID
         school_cache = {}
         major_cache = {}
-        
-        try:
-            for record in data:
-                school_name = record.get("school_name", "")
-                major_name = record.get("major_name", "")
-                
-                # 获取或创建学校
-                if school_name not in school_cache:
-                    row = conn.execute(
-                        "SELECT id FROM schools WHERE name = ?", (school_name,)
-                    ).fetchone()
-                    if row:
-                        school_cache[school_name] = row["id"]
-                    else:
-                        cursor = conn.execute(
-                            "INSERT INTO schools (name) VALUES (?)", (school_name,)
-                        )
-                        school_cache[school_name] = cursor.lastrowid
-                        conn.commit()
-                
-                # 获取或创建专业
-                if major_name not in major_cache:
-                    row = conn.execute(
-                        "SELECT id FROM majors WHERE name = ?", (major_name,)
-                    ).fetchone()
-                    if row:
-                        major_cache[major_name] = row["id"]
-                    else:
-                        cursor = conn.execute(
-                            "INSERT INTO majors (name) VALUES (?)", (major_name,)
-                        )
-                        major_cache[major_name] = cursor.lastrowid
-                        conn.commit()
-                
-                school_id = school_cache[school_name]
-                major_id = major_cache[major_name]
-                
-                # 插入录取记录
-                try:
-                    conn.execute(
-                        """INSERT INTO admission_records 
-                           (year, school_id, major_id, batch, min_score, min_rank, avg_score, plan_count)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            record.get("year"),
-                            school_id,
-                            major_id,
-                            record.get("batch", "普通类一段"),
-                            record.get("min_score"),
-                            record.get("min_rank"),
-                            record.get("avg_score"),
-                            record.get("plan_count"),
-                        )
-                    )
-                except Exception as e:
-                    pass  # 跳过重复记录
-            
-            conn.commit()
-            print(f"[掌上高考] 数据保存完成")
-        finally:
-            conn.close()
+
+        for record in data:
+            school_name = record.get("school_name", "")
+            major_name = record.get("major_name", "")
+            if not school_name or not major_name:
+                continue
+
+            if school_name not in school_cache:
+                school_cache[school_name] = insert_school(
+                    school_name,
+                    record.get("province"),
+                    record.get("city"),
+                    record.get("type"),
+                    record.get("level"),
+                    record.get("features"),
+                )
+
+            if major_name not in major_cache:
+                major_cache[major_name] = insert_major(
+                    major_name,
+                    record.get("category"),
+                    record.get("hot_trend"),
+                )
+
+            insert_admission_record(
+                record.get("year"),
+                school_cache[school_name],
+                major_cache[major_name],
+                record.get("batch", "普通类一段"),
+                record.get("min_score"),
+                record.get("min_rank"),
+                record.get("avg_score"),
+                record.get("plan_count"),
+                record.get("actual_count"),
+            )
+
+        print(f"[掌上高考] 数据保存完成")
     
     def run(self, years: List[int] = None):
         """

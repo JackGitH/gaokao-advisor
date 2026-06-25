@@ -30,12 +30,16 @@ def error_response(code: int, message: str):
 
 @router.get("/recommend")
 async def recommend(
-    score: Optional[int] = Query(None, description="高考分数"),
-    rank: Optional[int] = Query(None, description="全省排名"),
+    score: Optional[int] = Query(None, ge=0, le=750, description="高考分数"),
+    rank: Optional[int] = Query(None, ge=1, description="全省排名"),
     school_type: Optional[str] = Query(None, description="学校类型筛选：985,211,双一流,普通本科"),
     province: Optional[str] = Query(None, description="省内/省外"),
     major_category: Optional[str] = Query(None, description="专业类别"),
-    sort_by: str = Query("match_score", description="排序方式：match_score,school_level,stability,probability"),
+    sort_by: str = Query(
+        "match_score",
+        pattern="^(match_score|school_level|stability|probability)$",
+        description="排序方式：match_score,school_level,stability,probability",
+    ),
 ):
     """根据分数或排名推荐学校，返回冲/稳/保三档推荐"""
     # 参数校验：score 和 rank 至少传一个
@@ -57,6 +61,7 @@ async def recommend(
             score=score,
             rank=rank,
             filters=filters if filters else None,
+            sort_by=sort_by,
         )
 
         # 格式化输出
@@ -70,8 +75,10 @@ async def recommend(
                 "match_score": s.get("match_score", 0),
                 "probability": s.get("probability", 0),
                 "stability": s.get("stability", 0),
+                "school_level_score": s.get("school_level_score", 0),
                 "avg_rank": s.get("avg_rank", 0),
                 "avg_score": s.get("avg_score", 0),
+                "major_categories": s.get("major_categories", []),
                 "history": [
                     {"year": y, "min_score": sc, "min_rank": rk}
                     for y, sc, rk in zip(
@@ -87,7 +94,7 @@ async def recommend(
         safety = [format_school(s) for s in result.get("safety", [])]
 
         # 按sort_by重排（算法层已做排序，此处确认）
-        sort_key = sort_by if sort_by in ("match_score", "probability", "stability") else "match_score"
+        sort_key = "school_level_score" if sort_by == "school_level" else sort_by
         reach.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
         match_list.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
         safety.sort(key=lambda x: x.get(sort_key, 0), reverse=True)

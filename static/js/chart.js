@@ -204,8 +204,8 @@ const ChartModule = (() => {
 
     /**
      * 3. 热门专业排行 - 横向条形图
-     * @param {Array} hotMajors - [{major_name, avg_score, score_change, trend}]
-     * @param {Array} coldMajors - [{major_name, avg_score, score_change, trend}]
+     * @param {Array} hotMajors - [{major_name, heat_score, rank_change_rate}]
+     * @param {Array} coldMajors - [{major_name, cold_score, rank_change_rate}]
      */
     function renderHotMajorsChart(hotMajors, coldMajors) {
         const canvas = document.getElementById('chartHotMajors');
@@ -223,20 +223,15 @@ const ChartModule = (() => {
             return name.length > 10 ? name.slice(0, 10) + '…' : name;
         });
 
-        const changes = items.map(m => m.score_change || m.avg_score || 0);
-        const colors = items.map(m => {
-            const t = m.trend || '';
-            if (t === '热门' || t === '升温') return COLORS.reach;
-            if (t === '冷门' || t === '降温') return COLORS.safety;
-            return COLORS.gray;
-        });
+        const changes = items.map(m => m.heat_score ?? Math.abs((m.rank_change_rate || 0) * 100));
+        const colors = items.map(() => COLORS.reach);
 
         hotMajorsChart = new Chart(canvas, {
             type: 'bar',
             data: {
                 labels,
                 datasets: [{
-                    label: '分数线变化',
+                    label: '热度变化',
                     data: changes,
                     backgroundColor: colors.map(c => c + 'cc'),
                     borderColor: colors,
@@ -249,7 +244,7 @@ const ChartModule = (() => {
                 indexAxis: 'y',
                 scales: {
                     x: {
-                        title: { display: true, text: '平均分 / 变化幅度', font: { size: 11 } },
+                        title: { display: true, text: '位次提升幅度(%)', font: { size: 11 } },
                         ticks: { font: { size: 11 } },
                     },
                     y: {
@@ -261,7 +256,7 @@ const ChartModule = (() => {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: ctx => `${ctx.parsed.x > 0 ? '+' : ''}${ctx.parsed.x}`,
+                            label: ctx => `热度 ${ctx.parsed.x}%`,
                         },
                     },
                 },
@@ -276,10 +271,3 @@ const ChartModule = (() => {
         renderHotMajorsChart,
     };
 })();
-/**
- * 高考志愿推荐系统 - 图表可视化
- * 用于展示录取趋势、分数分布等图表
- */
-
-// TODO: 实现图表渲染逻辑
-console.log('图表模块已加载');

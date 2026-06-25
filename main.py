@@ -4,7 +4,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import uvicorn
 
 from config import API_CONFIG, BASE_DIR
@@ -19,20 +19,36 @@ app = FastAPI(
 
 # 注册API路由
 app.include_router(router)
+app.include_router(router, prefix="/gk")
 
 # 挂载静态文件
 static_dir = os.path.join(BASE_DIR, "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    app.mount("/gk/static", StaticFiles(directory=static_dir), name="gk_static")
 
 
-@app.get("/")
-async def root():
+def _index_response():
     """返回前端首页"""
     index_path = os.path.join(BASE_DIR, "static", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "高考志愿填报助手 API 已启动，请访问 /docs 查看接口文档"}
+
+
+@app.get("/")
+async def root():
+    return _index_response()
+
+
+@app.get("/gk", include_in_schema=False)
+async def gk_redirect():
+    return RedirectResponse(url="/gk/")
+
+
+@app.get("/gk/")
+async def gk_root():
+    return _index_response()
 
 
 @app.on_event("startup")

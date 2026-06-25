@@ -2,7 +2,14 @@
  * 高考志愿推荐系统 - 前端主逻辑
  */
 
-const API_BASE = 'api';
+function getAppBasePath() {
+    const path = window.location.pathname;
+    if (!path || path === '/') return '';
+    if (path.endsWith('/')) return path.replace(/\/$/, '');
+    return path.slice(0, path.lastIndexOf('/'));
+}
+
+const API_BASE = `${getAppBasePath()}/api`;
 
 // ============ DOM Elements ============
 const $  = id => document.getElementById(id);
@@ -145,13 +152,21 @@ function typeTag(type) {
 }
 
 function trendTag(trend) {
-    const map = {
-        '热门': 'trend-hot', '升温': 'trend-hot',
-        '冷门': 'trend-cold', '降温': 'trend-cold',
-        '平稳': 'trend-stable',
-    };
-    const cls = map[trend] || 'trend-unknown';
+    let cls = 'trend-unknown';
+    if (trend && (trend.includes('热门') || trend.includes('升温') || trend.includes('上升'))) {
+        cls = 'trend-hot';
+    } else if (trend && (trend.includes('冷门') || trend.includes('降温') || trend.includes('下降'))) {
+        cls = 'trend-cold';
+    } else if (trend && trend.includes('平稳')) {
+        cls = 'trend-stable';
+    }
     return `<span class="trend-tag ${cls}">${trend || '数据不足'}</span>`;
+}
+
+function asPercent(value) {
+    const num = Number(value) || 0;
+    const pct = num <= 1 ? num * 100 : num;
+    return Math.max(0, Math.min(100, Math.round(pct)));
 }
 
 // ============ Render: Statistics ============
@@ -208,9 +223,9 @@ function renderSchoolCards(schools, category, container) {
     }[category] || '';
 
     container.innerHTML = schools.map(s => {
-        const matchPct = Math.round((s.match_score || 0) * 100);
-        const probPct = Math.round((s.probability || 0) * 100);
-        const stabilityPct = Math.round((s.stability || 0) * 100);
+        const matchPct = asPercent(s.match_score);
+        const probPct = asPercent(s.probability);
+        const stabilityPct = asPercent(s.stability);
 
         const historyRows = (s.history || []).map(h =>
             `<tr><td>${h.year}</td><td>${h.min_score}</td><td>${h.min_rank ? h.min_rank.toLocaleString() : '-'}</td></tr>`
@@ -473,12 +488,3 @@ function init() {
 
 // 启动
 document.addEventListener('DOMContentLoaded', init);
-/**
- * 高考志愿推荐系统 - 前端主逻辑
- */
-
-// API 基础路径
-const API_BASE = 'api';
-
-// TODO: 实现前端交互逻辑
-console.log('高考志愿推荐系统已加载');
