@@ -142,7 +142,13 @@ class SchoolRanker:
         # k 为调节系数，控制曲线陡度
         k = 3.0
         x = (user_rank - avg_min_rank) / std_rank
-        probability = 1.0 / (1.0 + math.exp(k * x))
+        exponent = k * x
+        if exponent > 50:
+            probability = 0.0
+        elif exponent < -50:
+            probability = 1.0
+        else:
+            probability = 1.0 / (1.0 + math.exp(exponent))
 
         return round(min(0.99, max(0.01, probability)), 4)
 
