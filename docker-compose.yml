@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  gaokao:
+    build: .
+    container_name: gaokao-advisor
+    ports:
+      - "8001:8001"
+    restart: always
+    volumes:
+      - gaokao-data:/app/database
+
+volumes:
+  gaokao-data:

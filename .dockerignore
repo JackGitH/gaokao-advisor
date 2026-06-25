@@ -1,0 +1,10 @@
+.git
+__pycache__
+*.pyc
+venv
+.venv
+*.pem
+config.md
+memory.md
+.DS_Store
+database/*.db
