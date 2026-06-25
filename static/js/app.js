@@ -41,6 +41,9 @@ const DOM = {
     statBatchLine:  $('statBatchLine'),
     statSpecialLine: $('statSpecialLine'),
     dataNotice:      $('dataNotice'),
+    tudouAdvisor:    $('tudouAdvisor'),
+    tudouLine:       $('tudouLine'),
+    tudouTags:       $('tudouTags'),
     // tab counts
     tabReachCount:  $('tabReachCount'),
     tabMatchCount:  $('tabMatchCount'),
@@ -304,6 +307,79 @@ function renderSuggestedMajors(majors) {
         <div class="major-suggestion-title">建议专业</div>
         <div class="major-suggestion-list">${rows}</div>
     </div>`;
+}
+
+function getFirstSchoolName(list) {
+    return list && list.length ? list[0].school_name : '';
+}
+
+function buildTudouAdvice(data) {
+    const user = data.user_input || {};
+    const stats = data.statistics || {};
+    const rec = data.recommendations || {};
+    const subjects = user.selected_subjects || [];
+    const score = user.score;
+    const rank = user.rank;
+    const rankText = rank ? `${Number(rank).toLocaleString()}位` : '这个位次';
+    const total = stats.total || 0;
+    const reachCount = stats.reach_count || 0;
+    const matchCount = stats.match_count || 0;
+    const safetyCount = stats.safety_count || 0;
+    const tags = [];
+
+    let line = '';
+    if (!total) {
+        line = `土豆直说：${score ? `${score}分、` : ''}${rankText}当前没有匹配学校，先放宽学校类型和地域筛选，再看专科/本科边界。`;
+        tags.push({ text: '先放宽筛选', type: 'safety' });
+        if (!subjects.length) tags.push({ text: '补充选科', type: 'subject' });
+        return { line, tags };
+    }
+
+    if (matchCount >= reachCount && matchCount >= safetyCount) {
+        const firstMatch = getFirstSchoolName(rec.match);
+        line = `土豆直说：${score ? `${score}分、` : ''}${rankText}主阵地在稳一稳，先把${firstMatch || '稳妥学校'}的专业看细，再挑少量学校冲。`;
+        tags.push({ text: `稳 ${matchCount}`, type: 'match' });
+    } else if (safetyCount > matchCount) {
+        const firstSafety = getFirstSchoolName(rec.safety);
+        line = `土豆直说：${score ? `${score}分、` : ''}${rankText}保底空间够，${firstSafety || '保底学校'}这类可以兜底，别把志愿全压在冲档。`;
+        tags.push({ text: `保 ${safetyCount}`, type: 'safety' });
+    } else {
+        const firstReach = getFirstSchoolName(rec.reach);
+        line = `土豆直说：${score ? `${score}分、` : ''}${rankText}能冲，但${firstReach || '冲档学校'}要重点看专业最低位次，别只看校名。`;
+        tags.push({ text: `冲 ${reachCount}`, type: 'reach' });
+    }
+
+    if (reachCount) tags.push({ text: `冲 ${reachCount}`, type: 'reach' });
+    if (safetyCount && tags.length < 3) tags.push({ text: `保 ${safetyCount}`, type: 'safety' });
+
+    if (subjects.length) {
+        const hasPhysicsChemistry = subjects.includes('物理') && subjects.includes('化学');
+        const isLiberal = subjects.includes('思想政治') && subjects.includes('历史') && subjects.includes('地理');
+        if (isLiberal) {
+            line += ' 纯文组合优先看不限、政史地相关专业，物化硬要求的专业直接绕开。';
+            tags.push({ text: '纯文避开物化', type: 'subject' });
+        } else if (hasPhysicsChemistry) {
+            line += ' 物理化学都在，理工医农类专业面会宽一些，但仍要逐个看专业要求。';
+            tags.push({ text: '物化面更宽', type: 'subject' });
+        } else {
+            line += ` 已选${subjects.join('、')}，注意有些理工和医学专业会强制物理+化学。`;
+            tags.push({ text: '核对选科', type: 'subject' });
+        }
+    } else {
+        line += ' 还没选科时，专业可报性先别拍板，建议先勾选实际选考科目。';
+        tags.push({ text: '未选科', type: 'subject' });
+    }
+
+    return { line, tags: tags.slice(0, 4) };
+}
+
+function renderTudouAdvisor(data) {
+    if (!DOM.tudouAdvisor || !DOM.tudouLine || !DOM.tudouTags) return;
+    const advice = buildTudouAdvice(data);
+    DOM.tudouLine.textContent = advice.line;
+    DOM.tudouTags.innerHTML = advice.tags.map(tag =>
+        `<span class="tudou-tag ${tag.type || ''}">${escapeHtml(tag.text)}</span>`
+    ).join('');
 }
 
 // ============ Render: Statistics ============
@@ -601,6 +677,7 @@ async function doSearch() {
 
         // 渲染
         renderStatistics(recData);
+        renderTudouAdvisor(recData);
         renderSchoolCards(recData.recommendations.reach, 'reach', DOM.listReach);
         renderSchoolCards(recData.recommendations.match, 'match', DOM.listMatch);
         renderSchoolCards(recData.recommendations.safety, 'safety', DOM.listSafety);
