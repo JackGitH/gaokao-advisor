@@ -223,7 +223,9 @@ const ChartModule = (() => {
             return name.length > 10 ? name.slice(0, 10) + '…' : name;
         });
 
-        const changes = items.map(m => m.heat_score ?? Math.abs((m.rank_change_rate || 0) * 100));
+        const changes = items.map(m => (
+            m.heat_score == null ? Math.abs((m.rank_change_rate || 0) * 100) : m.heat_score
+        ));
         const colors = items.map(() => COLORS.reach);
 
         hotMajorsChart = new Chart(canvas, {

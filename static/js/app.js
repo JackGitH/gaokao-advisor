@@ -72,11 +72,11 @@ async function apiFetch(url) {
     const res = await fetch(API_BASE + url);
     if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || `请求失败 (${res.status})`);
+        throw new Error((err && err.detail) || `请求失败 (${res.status})`);
     }
     const json = await res.json();
     if (!json.success) {
-        throw new Error(json.error?.message || '接口返回错误');
+        throw new Error((json.error && json.error.message) || '接口返回错误');
     }
     return json.data;
 }
@@ -252,7 +252,7 @@ function asPercent(value) {
 }
 
 function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
         '&': '&amp;',
         '<': '&lt;',
         '>': '&gt;',
@@ -265,7 +265,12 @@ function renderSuggestedMajors(majors) {
     if (!majors || majors.length === 0) return '';
 
     const maxItems = window.matchMedia('(max-width: 768px)').matches ? 3 : 4;
-    const hasSelectedSubjects = Boolean(currentData?.user_input?.selected_subjects?.length);
+    const hasSelectedSubjects = Boolean(
+        currentData &&
+        currentData.user_input &&
+        currentData.user_input.selected_subjects &&
+        currentData.user_input.selected_subjects.length
+    );
     const rows = majors.slice(0, maxItems).map(m => {
         const probPct = asPercent(m.probability);
         const fit = m.fit_label || '参考';
@@ -304,7 +309,7 @@ function renderSuggestedMajors(majors) {
 // ============ Render: Statistics ============
 function renderStatistics(data) {
     const { user_input, statistics } = data;
-    DOM.statScore.textContent = user_input.score ?? '--';
+    DOM.statScore.textContent = user_input.score == null ? '--' : user_input.score;
     DOM.statRank.textContent = `排名 ${user_input.rank ? user_input.rank.toLocaleString() : '--'}`;
     DOM.statTotal.textContent = statistics.total;
     DOM.statInProv.textContent = statistics.in_province;
