@@ -5,8 +5,10 @@ import json
 import os
 import threading
 
-# stats.json 存放在 database/ 目录下，Docker volume 挂载点自动持久化
-STATS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'database', 'stats.json')
+from config import DATABASE_PATH
+
+# stats.json 存放在与数据库相同的目录下，Docker volume 自动持久化
+STATS_FILE = os.path.join(os.path.dirname(DATABASE_PATH), "stats.json")
 
 # 线程锁，避免并发写入冲突
 _lock = threading.Lock()
